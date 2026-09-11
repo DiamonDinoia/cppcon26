@@ -1,0 +1,12 @@
+fft_bench c9ae666 2026-09-14
+lib.mkl 2026.0.0
+lib.fftw 3.3.11
+lib.kiss v131-101-ge5e3fac
+lib.pocket 81d171a6
+lib.ducc 0.41.1-72-g9919ab6
+lib.sleef 3.9.0-41-g7623d6c
+lib.admiral 683a697
+gcc 14.3.0
+machine.icelake Intel Xeon Platinum 8362|64|icelake-server
+machine.rome AMD EPYC 7742|128|znver2
+machine.genoa AMD EPYC 9474F|96|znver4

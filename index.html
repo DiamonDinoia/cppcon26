@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Practical HPC — CppCon 2026 — Marco Barbone</title>
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+  <div class="title-bar">
+    <div class="traffic-lights">
+      <span class="red"></span><span class="yellow"></span><span class="green"></span>
+    </div>
+    <span class="path">marco_barbone — ~/talks/cppcon26.hpp</span>
+  </div>
+
+  <nav class="tab-bar">
+    <a href="https://diamondinoia.com/index.html">about.hpp</a>
+    <a href="https://diamondinoia.com/publications.html">papers.hpp</a>
+    <a href="https://diamondinoia.com/talks.html">talks.hpp</a>
+    <a href="https://diamondinoia.com/projects.html">projects.hpp</a>
+    <a href="index.html" class="active">cppcon26.hpp</a>
+    <a href="slides.html" class="tab-intro">slides.html</a>
+  </nav>
+
+  <main class="editor">
+    <div class="editor-content">
+      <div class="lines">
+
+        <div class="line"><div class="line-content"><span class="kw">#pragma once</span></div></div>
+        <div class="line"><div class="line-content">&nbsp;</div></div>
+
+        <div class="line"><div class="line-content">
+          <h1 class="hero-title">Practical HPC<span class="cursor"></span></h1>
+        </div></div>
+        <div class="line"><div class="line-content">
+          <div class="subtitle"><span class="kw">constexpr auto</span> title = <span class="str">"Forcing the Compiler's Hand with Modern C++"</span><span class="sep">;</span></div>
+        </div></div>
+        <div class="line"><div class="line-content">
+          <div class="subtitle"><span class="kw">constexpr auto</span> event = <span class="str">"CppCon 2026"</span><span class="sep">;</span></div>
+        </div></div>
+        <div class="line"><div class="line-content">
+          <div class="subtitle"><span class="kw">constexpr auto</span> who&nbsp;&nbsp; = <span class="str">"Marco Barbone, Flatiron Institute"</span><span class="sep">;</span></div>
+        </div></div>
+        <div class="line"><div class="line-content">&nbsp;</div></div>
+
+        <div class="line"><div class="line-content">
+          <h2><span class="kw">namespace</span> <span class="fn">talk</span> <span class="sep">{</span></h2>
+        </div></div>
+        <div class="line"><div class="line-content">
+          &nbsp;&nbsp;<span class="cm">// six patterns that buy performance and charge for it every day after</span>
+        </div></div>
+        <div class="line"><div class="line-content">
+          &nbsp;&nbsp;.slides = <span class="str">"<a href="slides.html">slides.html</a>"</span>,
+        </div></div>
+        <div class="line"><div class="line-content">
+          &nbsp;&nbsp;.benchmarks = <span class="str">"<a href="https://github.com/DiamonDinoia/cppcon26/tree/main/code">code/</a>"</span>,
+        </div></div>
+        <div class="line"><div class="line-content">
+          &nbsp;&nbsp;.repo = <span class="str">"<a href="https://github.com/DiamonDinoia/cppcon26">github.com/DiamonDinoia/cppcon26</a>"</span>,
+        </div></div>
+        <div class="line"><div class="line-content">
+          <span class="sep">}</span> <span class="cm">// namespace talk</span>
+        </div></div>
+        <div class="line"><div class="line-content">&nbsp;</div></div>
+
+        <div class="line"><div class="line-content">
+          <h2><span class="kw">namespace</span> <span class="fn">libraries</span> <span class="sep">{</span></h2>
+        </div></div>
+
+        <div class="line"><div class="line-content"><span class="ty">Repo</span> <span class="sep">{</span></div></div>
+        <div class="line"><div class="line-content">&nbsp;&nbsp;.name = <span class="str">"<a href="https://github.com/flatironinstitute/poet">poet</a>"</span>,</div></div>
+        <div class="line"><div class="line-content">&nbsp;&nbsp;.what = <span class="str">"compile-time control and runtime dispatch, C++17"</span>,</div></div>
+        <div class="line"><div class="line-content"><span class="sep">};</span></div></div>
+
+        <div class="line"><div class="line-content"><span class="ty">Repo</span> <span class="sep">{</span></div></div>
+        <div class="line"><div class="line-content">&nbsp;&nbsp;.name = <span class="str">"<a href="https://github.com/xtensor-stack/xsimd">xsimd</a>"</span>,</div></div>
+        <div class="line"><div class="line-content">&nbsp;&nbsp;.what = <span class="str">"portable SIMD batches"</span>,</div></div>
+        <div class="line"><div class="line-content"><span class="sep">};</span></div></div>
+
+        <div class="line"><div class="line-content"><span class="ty">Repo</span> <span class="sep">{</span></div></div>
+        <div class="line"><div class="line-content">&nbsp;&nbsp;.name = <span class="str">"<a href="https://github.com/flatironinstitute/finufft">FINUFFT</a>"</span>,</div></div>
+        <div class="line"><div class="line-content">&nbsp;&nbsp;.what = <span class="str">"where this started, <a href="https://github.com/flatironinstitute/finufft/issues/459">issue #459</a>"</span>,</div></div>
+        <div class="line"><div class="line-content"><span class="sep">};</span></div></div>
+
+        <div class="line"><div class="line-content"><span class="ty">Repo</span> <span class="sep">{</span></div></div>
+        <div class="line"><div class="line-content">&nbsp;&nbsp;.name = <span class="str">"<a href="https://github.com/DiamonDinoia/admiral">admiral</a>"</span>,</div></div>
+        <div class="line"><div class="line-content">&nbsp;&nbsp;.what = <span class="str">"the FFT library of the backup slides"</span>,</div></div>
+        <div class="line"><div class="line-content"><span class="sep">};</span></div></div>
+
+        <div class="line"><div class="line-content"><span class="ty">Repo</span> <span class="sep">{</span></div></div>
+        <div class="line"><div class="line-content">&nbsp;&nbsp;.name = <span class="str">"<a href="https://github.com/DiamonDinoia/simdref">simdref</a>"</span>,</div></div>
+        <div class="line"><div class="line-content">&nbsp;&nbsp;.what = <span class="str">"searchable SIMD intrinsic reference, <a href="https://diamondinoia.com/simdref/">diamondinoia.com/simdref</a>"</span>,</div></div>
+        <div class="line"><div class="line-content"><span class="sep">};</span></div></div>
+
+        <div class="line"><div class="line-content">
+          <span class="sep">}</span> <span class="cm">// namespace libraries</span>
+        </div></div>
+        <div class="line"><div class="line-content">&nbsp;</div></div>
+
+        <div class="line"><div class="line-content">
+          <h2><span class="kw">namespace</span> <span class="fn">prior_art</span> <span class="sep">{</span></h2>
+        </div></div>
+        <div class="line"><div class="line-content">
+          &nbsp;&nbsp;<span class="cm">// Andrei Alexandrescu, CppCon 2025</span>
+        </div></div>
+        <div class="line"><div class="line-content">
+          &nbsp;&nbsp;.talk = <span class="str">"<a href="https://youtu.be/X_w_pcPs2Fk">How to Tame Packs, std::tuple, and the Wily std::integer_sequence</a>"</span>,
+        </div></div>
+        <div class="line"><div class="line-content">
+          <span class="sep">}</span> <span class="cm">// namespace prior_art</span>
+        </div></div>
+
+      </div>
+    </div>
+  </main>
+
+  <footer class="status-bar">
+    <div class="status-left">
+      <span>marco_barbone</span><span>main</span><span>UTF-8</span>
+    </div>
+    <div class="status-right">
+      <a href="https://diamondinoia.com/talks.html">all talks</a>
+    </div>
+  </footer>
+
+</body>
+</html>

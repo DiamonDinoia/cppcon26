@@ -1,0 +1,1630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Practical HPC — Forcing the Compiler's Hand with Modern C++</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+
+/* ===========================================
+   THEME — colours sampled from the CppCon 2026
+   title card (assets/Practical HPC_Title Card copy.png)
+   =========================================== */
+:root {
+    --navy-deep:  #1B2340;   /* card corners            */
+    --navy:       #1F2844;   /* card field              */
+    --navy-lift:  #34446F;   /* card centre glow        */
+    --orange:     #FF8933;   /* card wedge, 26 badge    */
+    --amber:      #FFBB33;   /* card title, author name */
+    --white:      #FFFFFF;
+    --grey:       #AAACB5;   /* card plus glyph         */
+
+    --term-bg:    #141B30;
+    --term-bar:   #26314F;
+    --term-fg:    #D9DFEF;
+
+    --font-display: 'Barlow Condensed', sans-serif;
+    --font-body:    'Barlow', sans-serif;
+    --font-mono:    'JetBrains Mono', monospace;
+
+    --pad-x: 88px;
+    --ease:  cubic-bezier(0.16, 1, 0.3, 1);
+
+    --stage-bg: #0D1120;
+    --slide-bg: var(--navy);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* A spelling such as `if constexpr` reads as one token, so it never splits
+   across two lines. Listings are .term-body spans, not <code>, so this is
+   prose only. */
+code { white-space: nowrap; }
+
+/* --- fixed-stage base (viewport-base.css, verbatim) --- */
+/* ===========================================
+   FIXED 16:9 STAGE: MANDATORY BASE STYLES
+   Include this ENTIRE file in every presentation.
+   Slides are authored at 1920×1080 and scaled as a whole.
+   =========================================== */
+
+/* 1. Lock the browser viewport */
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--stage-bg, #000);
+}
+
+/* 2. Full-window deck viewport */
+.deck-viewport {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background: var(--stage-bg, #000);
+}
+
+/* 3. Fixed 16:9 design canvas.
+   JavaScript sets transform: translate(...) scale(...). */
+.deck-stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    transform-origin: 0 0;
+    background: var(--slide-bg, #fff);
+}
+
+/* 4. Slides stack inside the fixed stage.
+   Content must be laid out at 1920×1080, not reflowed per device. */
+.slide {
+    position: absolute;
+    inset: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    display: block;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    background: var(--slide-bg, #fff);
+}
+
+.slide.active,
+.slide.visible {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 1;
+}
+
+/* 5. Keep media inside authored slide bounds */
+img,
+video,
+canvas,
+svg {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+/* 6. Presentation chrome stays outside the slide design system */
+.deck-controls {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    z-index: 1000;
+}
+
+/* 7. Print one fixed-size slide per page */
+@media print {
+    html,
+    body {
+        width: 1920px;
+        height: auto;
+        overflow: visible;
+        background: #fff;
+    }
+
+    .deck-viewport {
+        position: static;
+        overflow: visible;
+        background: #fff;
+    }
+
+    .deck-stage {
+        position: static;
+        width: auto;
+        height: auto;
+        transform: none !important;
+        background: none;
+    }
+
+    .slide {
+        position: relative;
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        width: 1920px;
+        height: 1080px;
+        break-after: page;
+        page-break-after: always;
+    }
+
+    .slide:last-child {
+        break-after: auto;
+        page-break-after: auto;
+    }
+
+    .deck-controls {
+        display: none !important;
+    }
+}
+
+/* 8. Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.2s !important;
+    }
+}
+
+
+/* ===========================================
+   SLIDE SHELL
+   Every content slide: kicker, title, body, chrome.
+   =========================================== */
+.slide {
+    font-family: var(--font-body);
+    color: var(--white);
+    background:
+        radial-gradient(68% 62% at 50% 48%, #3A4B7D 0%, rgba(58, 75, 125, 0) 72%),
+        linear-gradient(150deg, var(--navy) 0%, #212C4B 46%, var(--navy-deep) 100%);
+}
+
+/* orange corner wedge, echoing the title card */
+.slide:not(.title-slide)::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 132px; height: 132px;
+    background: var(--orange);
+    clip-path: polygon(100% 0, 100% 100%, 0 0);
+}
+
+.slide-content {
+    position: absolute;
+    inset: 58px var(--pad-x) 108px var(--pad-x);
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- kicker: small orange eyebrow above the title --- */
+.kicker {
+    display: flex; align-items: center; gap: 14px;
+    font-family: var(--font-display);
+    font-size: 34px; font-weight: 600;
+    letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--orange);
+}
+.kicker::before {
+    content: ''; width: 26px; height: 5px; background: var(--orange);
+}
+
+/* --- titles --- */
+h2 {
+    font-family: var(--font-display);
+    font-size: 83px; font-weight: 600; line-height: 1.02;
+    letter-spacing: -0.005em;
+    margin: 12px 0 0;
+}
+h2 em { font-style: normal; color: var(--amber); }
+.lede {
+    font-size: 38px; font-weight: 400; line-height: 1.42;
+    color: #C6CEE0; max-width: 1500px; margin-top: 20px;
+}
+.lede b { color: var(--white); font-weight: 600; }
+.lede code, .inline {
+    font-family: var(--font-mono); font-size: 0.88em;
+    color: var(--amber); background: rgba(255, 187, 51, 0.10);
+    border-radius: 5px; padding: 2px 8px;
+}
+
+p, li, td, figcaption, h2, h3 { text-wrap: pretty; }
+
+.body { flex: 1; min-height: 0; margin-top: 22px; display: flex; gap: 40px; }
+/* a terminal in a row body fills the width it is given, and only the height it needs */
+.body > .term { flex: 1 1 auto; min-width: 0; max-height: 100%; align-self: center; }
+.body.stack { flex-direction: column; gap: 26px; justify-content: center; }
+.body.center { align-items: center; justify-content: center; }
+/* two listings of the same kernel, one above the other */
+.terms { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column;
+         gap: 14px; justify-content: center; }
+/* two stacked listings that would not otherwise leave room for both result strips */
+.terms.tight { gap: 10px; }
+.terms.tight .term-body { padding-top: 8px; padding-bottom: 8px; }
+.terms .or {
+    align-self: center; font-family: var(--font-display); font-size: 29px;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--grey);
+}
+
+/* ===========================================
+   CHROME — Flatiron Institute mark, slide number
+   =========================================== */
+.chrome-logo {
+    position: absolute; left: var(--pad-x); bottom: 38px;
+    width: 250px; opacity: 0.55;
+}
+.chrome-num {
+    position: absolute; right: var(--pad-x); bottom: 46px;
+    font-family: var(--font-mono); font-size: 22px; font-weight: 500;
+    color: #6A76A0; letter-spacing: 0.08em;
+}
+.chrome-num b { color: var(--amber); font-weight: 500; }
+.chrome-rule {
+    position: absolute; left: var(--pad-x); right: var(--pad-x); bottom: 96px;
+    height: 1px; background: linear-gradient(90deg,
+        rgba(255, 137, 51, 0.45) 0%, rgba(255, 137, 51, 0.06) 38%, rgba(255, 255, 255, 0) 100%);
+}
+
+/* ===========================================
+   TITLE SLIDE — the supplied card, unaltered
+   =========================================== */
+.title-slide { background: #1F2844; }
+.title-slide img {
+    position: absolute; inset: 0;
+    width: 1920px; height: 1080px;
+    max-width: none; max-height: none;
+    object-fit: cover;
+}
+
+/* ===========================================
+   TERMINAL — the deck's code container
+   =========================================== */
+.term {
+    display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden;
+    border: 1px solid rgba(255, 137, 51, 0.26);
+    border-radius: 11px;
+    background: var(--term-bg);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.46);
+}
+.term-bar {
+    display: flex; align-items: center; gap: 11px;
+    flex: 0 0 auto; padding: 13px 20px;
+    background: linear-gradient(180deg, var(--term-bar) 0%, #1E2740 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.term-bar i { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+.term-bar i:nth-of-type(1) { background: var(--orange); }
+.term-bar i:nth-of-type(2) { background: var(--amber); }
+.term-bar i:nth-of-type(3) { background: #6A76A0; }
+.term-name {
+    margin-left: 8px;
+    font-family: var(--font-mono); font-size: 22px; font-weight: 500;
+    color: #9AA6C4;
+}
+.term-flags {
+    margin-left: auto;
+    font-family: var(--font-mono); font-size: 19px; font-weight: 400;
+    color: #63709A; white-space: nowrap;
+}
+/* The body never shrinks below its listing. A shrunk body keeps its own
+   overflow visible, so the last code line slides under the .term-out bar and
+   no clipping ancestor reports it. Refusing to shrink moves the overflow up to
+   .term, which clips, and gen/verify.py fails on it. */
+.term-body {
+    flex: 1 0 auto; padding: 16px 26px;
+    font-family: var(--font-mono); font-weight: 500;
+    font-variant-ligatures: none;
+    font-size: 28px; line-height: 1.38;
+    color: var(--term-fg);
+    white-space: pre; tab-size: 4;
+}
+.term-body { counter-reset: line; }
+.term-body .ln::before {
+    counter-increment: line; content: counter(line);
+    display: inline-block; width: 2ch; margin-right: 1ch; text-align: right;
+    color: #4E5A7E; font-weight: 400; font-style: normal; user-select: none;
+}
+.term-body.scroller .ln::before { width: 3ch; }
+.term-body.sm { font-size: 24px; line-height: 1.34; }
+.term-body.xs { font-size: 20px; line-height: 1.32; }
+.term-body.lg { font-size: 32px; line-height: 1.4; }
+
+/* Scrollable listing: a whole vendored header, scrolled in place. The wheel
+   handler in the deck script leaves .scroller alone, so it scrolls instead of
+   advancing the slide. gen/verify.py skips its clipped-y check for the class. */
+.term-body.scroller {
+    flex-shrink: 1; min-height: 0;    /* this one does shrink: the box scrolls */
+    overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-color: var(--orange) rgba(255, 255, 255, 0.06); scrollbar-width: thin;
+}
+.term-body.scroller::-webkit-scrollbar { width: 11px; }
+.term-body.scroller::-webkit-scrollbar-thumb {
+    background: rgba(255, 137, 51, 0.5); border-radius: 6px;
+}
+
+/* Figure strip: benchmark plots, one per card, scrolled sideways with snap. */
+.figstrip {
+    flex: 1 1 auto; min-width: 0; align-self: stretch;
+    display: flex; gap: 26px; padding: 4px 2px 18px;
+    overflow-x: auto; overscroll-behavior: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-color: var(--orange) rgba(255, 255, 255, 0.06); scrollbar-width: thin;
+}
+.figstrip::-webkit-scrollbar { height: 11px; }
+.figstrip::-webkit-scrollbar-thumb {
+    background: rgba(255, 137, 51, 0.5); border-radius: 6px;
+}
+.figstrip figure {
+    flex: 0 0 auto; scroll-snap-align: center;
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 16px; border-radius: 11px;
+    background: var(--white);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.46);
+}
+/* The card stretches to the strip and never grows, so the image height is what
+   padding, gap and a one-line caption leave. gen/verify.py fails on a caption
+   that escapes the white card. */
+.figstrip img { display: block; height: 531px; width: auto; }
+.figstrip figcaption {
+    font-family: var(--font-mono); font-size: 26px; color: #3C4A73;
+    letter-spacing: 0.02em;
+}
+
+/* shell result strip: the measured throughput, as program output */
+.term-out {
+    display: flex; align-items: baseline; gap: 18px;
+    flex: 0 0 auto; padding: 14px 26px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 187, 51, 0.055);
+    font-family: var(--font-mono); font-size: 27px; font-weight: 500;
+}
+.term-out .p { color: var(--orange); }
+.term-out .g { color: var(--amber); font-weight: 700; font-size: 32px; }
+.term-out .x { color: var(--white); font-weight: 700; }
+.term-out .note { margin-left: auto; color: #7C88AE; font-size: 26px; }
+
+/* --- syntax colours --- */
+.term-body .k { color: var(--orange); }
+.term-body .t { color: #79C0D8; }
+.term-body .f { color: #E9EEFA; }
+.term-body .n,
+.term-body .s { color: var(--amber); }
+.term-body .c { color: #6C7799; font-style: italic; }
+.term-body .p { color: #C39BE8; }
+
+/* ===========================================
+   NOTES COLUMN beside a terminal
+   =========================================== */
+.notes { flex: 0 0 484px; min-width: 0; display: flex; flex-direction: column;
+         gap: 20px; justify-content: center; }
+.notes .lede { font-size: 34px; }
+.notes .lede code { font-size: 0.80em; overflow-wrap: anywhere; }
+.notes.wide { flex-basis: 560px; }
+/* opacity, not visibility: the column keeps its width, so the listing never jumps */
+.notes.step { opacity: 0; transition: opacity 0.4s; }
+.slide.stepped .notes.step { opacity: 1; }
+.cost { list-style: none; display: flex; flex-direction: column; gap: 17px; }
+.cost li {
+    position: relative; padding-left: 32px;
+    font-size: 34px; line-height: 1.35; color: #C6CEE0;
+}
+.cost li::before {
+    content: '\25B8'; position: absolute; left: 0; top: -1px;
+    color: var(--orange); font-size: 34px;
+}
+.cost li b { color: var(--white); font-weight: 600; }
+.cost code { font-family: var(--font-mono); font-size: 0.86em; color: var(--amber); }
+.cost.tight li { font-size: 31px; gap: 12px; }
+
+/* ===========================================
+   CARDS — the six monsters
+   =========================================== */
+.cards {
+    /* rows hug their content and the block centres, so a card without a description
+       is not a tall empty box */
+    display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: max-content;
+    align-content: center; gap: 26px; flex: 1;
+}
+.card {
+    /* top-anchored: cards carry a description or not, and the titles still line up */
+    display: flex; flex-direction: column; justify-content: flex-start; gap: 12px;
+    padding: 30px 32px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-left: 4px solid var(--orange);
+    border-radius: 10px;
+    background: linear-gradient(160deg, rgba(52, 68, 111, 0.42), rgba(27, 35, 64, 0.34));
+}
+.card .no {
+    font-family: var(--font-mono); font-size: 25px; font-weight: 700;
+    color: var(--orange); letter-spacing: 0.1em;
+}
+.card h3 {
+    font-family: var(--font-display); font-size: 49px; font-weight: 600;
+    line-height: 1.04; color: var(--white);
+}
+.card p { font-size: 29px; line-height: 1.34; color: #AEB8CE; }
+
+/* ===========================================
+   BIG NUMBERED LIST
+   =========================================== */
+.ranked { list-style: none; display: flex; flex-direction: column; gap: 22px; flex: 1; justify-content: center; }
+.ranked li { display: flex; align-items: baseline; gap: 30px; }
+.ranked .rk {
+    font-family: var(--font-mono); font-size: 34px; font-weight: 700;
+    color: var(--orange); min-width: 56px;
+}
+.ranked h3 { font-family: var(--font-display); font-size: 65px; font-weight: 600; color: var(--white); }
+.ranked p { font-size: 34px; color: #A9B3CC; margin-left: auto; text-align: right; max-width: 720px; }
+
+/* ===========================================
+   SCOREBOARD TABLE
+   =========================================== */
+.score { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.score th {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: 29px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: #8894B6; text-align: right; padding: 0 0 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+.score th.name { text-align: left; }
+.score th.grp { color: var(--amber); text-align: center; }
+.score td {
+    font-family: var(--font-mono); font-size: 29px; font-weight: 500;
+    text-align: right; padding: 5px 0; color: var(--term-fg);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+}
+.score td.name { text-align: left; font-family: var(--font-body); font-size: 32px; }
+.score td.bar { width: 300px; padding-left: 22px; }
+/* one machine: the freed columns go to the bar, and the name column stops sprawling */
+.score.solo td.name, .score.solo th.name { width: 620px; }
+.score.solo td.bar { width: auto; }
+.score.solo td.val { width: 132px; text-align: right; }
+.score.solo th.grp { text-align: right; }
+.score td.x { color: #8894B6; padding-left: 20px; width: 118px; }
+.score .bg { display: block; height: 13px; border-radius: 7px; background: rgba(255, 255, 255, 0.075); }
+.score .fill { display: block; height: 100%; border-radius: 7px; }
+.score tr.hi td { color: var(--white); }
+.score tr.hi td.name { color: var(--amber); font-weight: 600; }
+.score tr.dim td { color: #7E89AB; }
+.score tr.dim td.name { color: #8F9ABB; }
+.score .l .fill { background: linear-gradient(90deg, #FFBB33, #FF9E33); }
+.score .w .fill { background: linear-gradient(90deg, #FF8933, #E0662A); }
+.score-legend { display: flex; gap: 34px; margin-top: 6px; font-size: 28px; color: #8894B6; }
+.score-legend b { font-weight: 600; }
+.score-legend i { display: inline-block; width: 26px; height: 12px; border-radius: 6px; margin-right: 10px; }
+
+/* ===========================================
+   TIMELINE
+   Three grid rows: above the line, the line,
+   below the line. Every dot lands on the line.
+   =========================================== */
+.tl { position: relative; flex: 1; height: 470px; max-height: 100%; align-self: center; }
+.tl-line {
+    position: absolute; left: 0; right: 0; top: 50%; height: 3px; margin-top: -1px;
+    background: linear-gradient(90deg, rgba(255, 137, 51, 0.22), var(--orange));
+}
+.tl-grid { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, 1fr); }
+.tl-col { display: grid; grid-template-rows: 1fr 34px 1fr; justify-items: center; }
+.tl-col .cell {
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    text-align: center; max-width: 350px;
+}
+.tl-col.up .cell { grid-row: 1; align-self: end; padding-bottom: 20px; }
+.tl-col.down .cell { grid-row: 3; align-self: start; padding-top: 20px; }
+.tl-col .dot {
+    grid-row: 2; align-self: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--navy-deep); border: 4px solid var(--orange);
+}
+.tl-col.hi .dot { border-color: var(--amber); width: 26px; height: 26px; }
+.tl-col .when {
+    font-family: var(--font-mono); font-size: 29px; font-weight: 700; color: var(--amber);
+}
+.tl-col .what { font-size: 29px; line-height: 1.3; color: #C6CEE0; }
+.tl-col .what b { color: var(--white); font-weight: 600; display: block; font-size: 34px; }
+
+/* ===========================================
+   JOURNEY BOARD
+   Gioco dell'oca: tiles sit on a spiral track
+   that winds inward and ends at the centre.
+   Geometry comes from build.py, in slide pixels.
+   =========================================== */
+.board { position: relative; align-self: center; width: 100%; height: 640px; max-height: 100%; }
+.board svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.board .track {
+    fill: none; stroke: var(--orange); stroke-opacity: 0.5;
+    stroke-width: 9; stroke-linecap: round;
+}
+.board .pips circle { fill: var(--navy-deep); stroke: var(--orange); stroke-opacity: 0.55; stroke-width: 3; }
+.board .sq {
+    position: absolute; transform: translate(-50%, -50%);
+    width: 364px; min-height: 178px;
+    display: flex; flex-direction: column; gap: 5px;
+    padding: 20px 22px 18px; border-radius: 18px;
+    background: linear-gradient(152deg, #2A3760 0%, #1B2340 100%);
+    border: 3px solid rgba(255, 137, 51, 0.55);
+    box-shadow: 0 16px 34px rgba(8, 12, 26, 0.45);
+}
+.board .sq .hd { display: flex; align-items: center; gap: 13px; }
+.board .sq .no {
+    width: 42px; height: 42px; border-radius: 50%; flex: none;
+    display: grid; place-items: center;
+    font-family: var(--font-mono); font-size: 26px; font-weight: 700;
+    color: var(--navy-deep); background: var(--orange);
+}
+.board .sq .when { font-family: var(--font-mono); font-size: 27px; font-weight: 700; color: var(--amber); }
+.board .sq b { font-size: 34px; font-weight: 600; color: var(--white); line-height: 1.14; }
+.board .sq .what { font-size: 27px; line-height: 1.32; color: #C6CEE0; }
+.board .sq .what code { font-size: 0.94em; color: #DCE3F5; }
+.board .sq.goal {
+    border-color: var(--amber);
+    background: linear-gradient(152deg, #35467A 0%, #222C50 100%);
+}
+.board .sq.goal .no { background: var(--amber); }
+.board .start {
+    position: absolute; transform: translate(-50%, -170%);
+    font-family: var(--font-mono); font-size: 27px; font-weight: 700;
+    letter-spacing: 0.2em; text-transform: uppercase; color: var(--amber);
+}
+
+/* ===========================================
+   STATEMENT SLIDES
+   =========================================== */
+.statement { display: flex; flex-direction: column; justify-content: center; gap: 34px; height: 100%; }
+/* art on a statement slide sits in the empty right half, clear of the text column.
+   .slide-content is already `position: absolute`, so it is the containing block. */
+.slide-content > .art {
+    position: absolute; right: 0; bottom: 0; width: 720px; pointer-events: none;
+}
+.statement .big {
+    font-family: var(--font-display); font-size: 103px; font-weight: 600;
+    line-height: 1.04; letter-spacing: -0.01em; max-width: 1560px;
+}
+.statement .big em { font-style: normal; color: var(--amber); }
+.statement .sub { font-size: 36px; line-height: 1.48; color: #C0C9DD; max-width: 1340px; }
+.statement .sub b { color: var(--white); font-weight: 600; }
+.statement .sub code, .statement .sub .inline {
+    font-family: var(--font-mono); font-size: 0.86em; color: var(--amber);
+    background: rgba(255, 187, 51, 0.1); border-radius: 5px; padding: 2px 8px;
+}
+
+/* section divider */
+.section-slide .num {
+    font-family: var(--font-mono); font-size: 31px; font-weight: 700;
+    color: var(--orange); letter-spacing: 0.24em;
+}
+.section-slide .big { font-size: 132px; }
+
+/* ===========================================
+   LINKS / QR
+   =========================================== */
+.links { display: flex; gap: 62px; flex: 1; align-items: center; }
+.links .qr {
+    flex: 0 0 auto; padding: 18px 18px 12px; border-radius: 14px;
+    background: var(--white); border: 3px solid var(--amber);
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);
+}
+.links .qr img { width: 306px; height: 306px; image-rendering: pixelated; display: block; }
+.links .qr p {
+    margin-top: 10px; text-align: center;
+    font-family: var(--font-mono); font-size: 25px; font-weight: 700; color: #1B2340;
+}
+.repos { list-style: none; display: flex; flex-direction: column; gap: 20px; }
+.repos li { display: flex; align-items: baseline; gap: 22px; font-size: 35px; color: #C6CEE0; }
+.repos .nm {
+    font-family: var(--font-mono); font-size: 36px; font-weight: 700;
+    color: var(--amber); min-width: 190px;
+}
+
+/* ===========================================
+   CHART — grouped bars, one colour per machine
+   =========================================== */
+.chart { flex: 1; display: flex; flex-direction: column; }
+.chart svg { width: 100%; height: 100%; max-width: none; max-height: none; }
+.chart .gl { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
+.chart .gt { fill: #6A76A0; font-family: var(--font-mono); font-size: 25px; }
+.chart .lbl { fill: #C0C9DD; font-family: 'Barlow Condensed', sans-serif; font-size: 29px; font-weight: 500; }
+.chart .val { font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 700; }
+.chart .bar { transform-box: fill-box; transform-origin: 50% 100%; }
+.slide.visible .chart .bar { animation: grow 0.75s var(--ease) backwards; }
+@keyframes grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS
+   =========================================== */
+.reveal {
+    opacity: 0; transform: translateY(26px);
+    transition: opacity 0.55s var(--ease), transform 0.55s var(--ease);
+}
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.05s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.13s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.21s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.29s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.37s; }
+
+/* ===========================================
+   LAYOUT HELPERS
+   =========================================== */
+/* two terminals side by side */
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; flex: 1; min-height: 0; }
+
+/* bullet row under a wide block */
+.cost.row { flex-direction: row; gap: 40px; flex: 0 0 auto; }
+.cost.row li { flex: 1; font-size: 29px; }
+.cost.wide { flex: 0 0 620px; }
+/* the one monster with no listing in talk.md: the cost list is the whole slide */
+.cost.full { flex: 1; align-self: center; gap: 30px; }
+.cost.full li { font-size: 37px; line-height: 1.42; padding-left: 46px; max-width: 1500px; }
+.cost.full li::before { font-size: 29px; top: 6px; }
+
+/* pragma history */
+.hist { width: 100%; border-collapse: collapse; }
+.hist td {
+    padding: 14px 0; font-size: 31px; line-height: 1.34; color: #C6CEE0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.075); vertical-align: top;
+}
+.hist td.when {
+    width: 340px; padding-right: 34px;
+    font-family: var(--font-mono); font-size: 28px; font-weight: 600; color: var(--amber);
+    white-space: nowrap;
+}
+.hist code {
+    font-family: var(--font-mono); font-size: 0.85em; color: var(--orange);
+    background: rgba(255, 137, 51, 0.1); border-radius: 5px; padding: 2px 7px;
+}
+
+/* footnote strip under a scoreboard */
+.foot {
+    flex: 0 0 auto; font-size: 26px; line-height: 1.5; color: #7C88AE;
+}
+.foot code { font-family: var(--font-mono); font-size: 0.94em; color: #9AA6C4; }
+
+/* ===========================================
+   PRESENTER CHROME (outside the stage)
+   =========================================== */
+.deck-progress {
+    position: fixed; left: 0; bottom: 0; height: 3px;
+    background: var(--orange); z-index: 1000;
+    transition: width 0.35s var(--ease);
+}
+.edit-hotzone { position: fixed; top: 0; left: 0; width: 80px; height: 80px; z-index: 10000; cursor: pointer; }
+.edit-toggle {
+    position: fixed; top: 18px; left: 18px; z-index: 10001;
+    width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+    border: 1px solid rgba(255, 187, 51, 0.5); background: #1B2340; color: var(--amber);
+    font-size: 22px; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+}
+.edit-toggle.show, .edit-toggle.active { opacity: 1; pointer-events: auto; }
+.edit-toggle.active { background: var(--amber); color: #1B2340; }
+body.editing [contenteditable]:hover { outline: 1px dashed rgba(255, 187, 51, 0.6); }
+body.editing [contenteditable]:focus { outline: 2px solid var(--amber); }
+
+</style>
+</head>
+<body>
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+<section class="slide title-slide active visible" aria-label="slide 1"><img src="assets/Practical%20HPC_Title%20Card%20copy.png" alt="Practical HPC — Forcing the Compiler's Hand with Modern C++, Marco Barbone, CppCon 2026"></section>
+<!-- SPEAKER NOTE: Mention this is not an AI talk. -->
+<section class="slide statement-slide" aria-label="slide 2"><div class="slide-content"><div class="statement"><p class="kicker reveal">Intro</p><p class="big reveal">C++ is a great language for <em>low-level optimization</em> and is getting better!</p><p class="sub reveal">Is it perfect? Constraining the compiler can backfire.<br><br>Thanks to the committee for the tools that make this possible, and to the compiler developers, whom the code in this talk probably undermines.</p></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>02</b> / 44</p></section>
+<!-- SPEAKER NOTE: Alexandrescu video: https://www.youtube.com/watch?v=X_w_pcPs2Fk -->
+<section class="slide" aria-label="slide 3"><div class="slide-content"><p class="kicker reveal">Timeline</p><h2 class="reveal">How this talk <em>happened</em></h2><div class="body reveal"><div class="tl"><div class="tl-line"></div><div class="tl-grid" style="grid-template-columns:repeat(4,1fr)"><div class="tl-col up"><div class="cell"><span class="when">2024-06-21</span><span class="what"><b>FINUFFT #459</b>unroll and dispatch by hand on the CPU spreader</span></div><span class="dot"></span></div><div class="tl-col down"><div class="cell"><span class="when">2025-09-16</span><span class="what"><b>CppCon 2025</b>Alexandrescu, &quot;How to Tame Packs&quot;: the systematic version</span></div><span class="dot"></span></div><div class="tl-col up hi"><div class="cell"><span class="when">2025-11-06</span><span class="what"><b>poet is born</b>the trick becomes a library</span></div><span class="dot"></span></div><div class="tl-col down"><div class="cell"><span class="when">2026-09-14</span><span class="what"><b>CppCon 2026</b>this talk</span></div><span class="dot"></span></div></div></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>03</b> / 44</p></section>
+<!-- SPEAKER NOTE: The QR points at the links page of this repo, index.html, which lists all of these. -->
+<section class="slide" aria-label="slide 4"><div class="slide-content"><p class="kicker reveal">Notice</p><h2 class="reveal">Not a product placement. <em>But</em>&hellip;</h2><div class="body links reveal"><div class="qr"><img src="assets/qr-page.png" alt="QR code to the links page"><p>diamondinoia.com/cppcon26</p></div><ul class="repos"><li><span class="nm">poet</span>compile-time control and runtime dispatch, C++17</li><li><span class="nm">xsimd</span>portable SIMD batches</li><li><span class="nm">FINUFFT</span>where this started, issue #459</li><li><span class="nm">these slides</span>the benchmark code</li></ul></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>04</b> / 44</p></section>
+<section class="slide statement-slide" aria-label="slide 5"><div class="slide-content"><div class="statement"><p class="kicker reveal">Scope</p><p class="big reveal">This talk is <em>not</em> a template packs tutorial.</p><p class="sub reveal">For template packs see Andrei Alexandrescu, CppCon 2025, <i>How to Tame Packs, std::tuple, and the Wily std::integer_sequence</i> <code>youtu.be/X_w_pcPs2Fk</code>.<br><br>Here: the gist, how to use them for low level optimization.</p></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>05</b> / 44</p></section>
+<!-- SPEAKER NOTE: One stop per standard. The features named here are the ones the kernels use. -->
+<section class="slide" aria-label="slide 6"><div class="slide-content"><p class="kicker reveal">Agenda</p><h2 class="reveal">The <em>journey</em></h2><div class="body reveal"><div class="board"><svg viewBox="0 0 1744 640" preserveAspectRatio="none"><path class="track" d="M120,560 L1574,560 Q1620,560 1620,514 L1620,156 Q1620,110 1574,110 L466,110 Q420,110 420,156 L420,284 Q420,330 466,330 L880,330"/><g class="pips"><circle cx="120" cy="560" r="8"/><circle cx="184" cy="560" r="8"/><circle cx="248" cy="560" r="8"/><circle cx="312" cy="560" r="8"/><circle cx="376" cy="560" r="8"/><circle cx="440" cy="560" r="8"/><circle cx="504" cy="560" r="8"/><circle cx="952" cy="560" r="8"/><circle cx="1016" cy="560" r="8"/><circle cx="1080" cy="560" r="8"/><circle cx="1528" cy="560" r="8"/><circle cx="1592" cy="560" r="8"/><circle cx="1620" cy="524" r="8"/><circle cx="1620" cy="460" r="8"/><circle cx="1620" cy="396" r="8"/><circle cx="1620" cy="140" r="8"/><circle cx="1586" cy="110" r="8"/><circle cx="1522" cy="110" r="8"/><circle cx="1458" cy="110" r="8"/><circle cx="1394" cy="110" r="8"/><circle cx="946" cy="110" r="8"/><circle cx="882" cy="110" r="8"/><circle cx="818" cy="110" r="8"/><circle cx="754" cy="110" r="8"/><circle cx="690" cy="110" r="8"/><circle cx="626" cy="110" r="8"/><circle cx="562" cy="110" r="8"/><circle cx="498" cy="110" r="8"/><circle cx="434" cy="110" r="8"/><circle cx="420" cy="160" r="8"/><circle cx="420" cy="224" r="8"/><circle cx="420" cy="288" r="8"/><circle cx="442" cy="330" r="8"/><circle cx="506" cy="330" r="8"/><circle cx="570" cy="330" r="8"/><circle cx="634" cy="330" r="8"/></g></svg><div class="sq" style="left:717px;top:539px"><span class="hd"><span class="no">01</span><span class="when">monsters</span></span><b>the six patterns</b><span class="what">macros, pragmas, inline asm</span></div><div class="sq" style="left:1315px;top:539px"><span class="hd"><span class="no">02</span><span class="when">C++14/17</span></span><b>fold expressions</b><span class="what"><code>integral_constant</code>, <code>integer_sequence</code>, <code>if constexpr</code></span></div><div class="sq" style="left:1550px;top:268px"><span class="hd"><span class="no">03</span><span class="when">C++20</span></span><b>templated lambdas</b><span class="what"><code>consteval</code></span></div><div class="sq" style="left:1180px;top:110px"><span class="hd"><span class="no">04</span><span class="when">C++26</span></span><b>template for</b><span class="what"><code>std::simd</code></span></div><div class="sq goal" style="left:880px;top:330px"><span class="hd"><span class="no">05</span><span class="when">example</span></span><b>admiral</b><span class="what">an FFT library, based on poet and xsimd</span></div><span class="start" style="left:120px;top:560px">start</span></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>06</b> / 44</p></section>
+<section class="slide section-slide" aria-label="slide 7"><div class="slide-content"><div class="statement"><p class="kicker reveal">Part one</p><p class="big reveal">The six <em>monsters</em></p><p class="sub reveal">Six patterns that buy performance and charge for it every day after.</p></div><img class="art reveal" src="assets/monster-under-bed.svg" alt=""></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>07</b> / 44</p></section>
+<!-- SPEAKER NOTE: Ask the audience for the monsters this list misses. -->
+<section class="slide" aria-label="slide 8"><div class="slide-content"><p class="kicker reveal">The six monsters</p><h2 class="reveal">What lives in <em>real</em> codebases</h2><div class="body reveal"><div class="cards"><div class="card"><span class="no">01</span><h3>Hand unrolling</h3></div><div class="card"><span class="no">02</span><h3>Macro magic</h3></div><div class="card"><span class="no">03</span><h3>Pragmas</h3></div><div class="card"><span class="no">04</span><h3>Kernel dispatch</h3></div><div class="card"><span class="no">05</span><h3>Inline asm</h3></div><div class="card"><span class="no">06</span><h3>Generated code</h3></div></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>08</b> / 44</p></section>
+<!-- SPEAKER NOTE: Every following slide is measured against this number. std::accumulate fixes the order of the adds, so it compiles to the same chain: measured 1.00x. -->
+<section class="slide" aria-label="slide 9"><div class="slide-content"><p class="kicker reveal">Baseline</p><h2 class="reveal">One accumulator, <em>one serial chain</em></h2><div class="body reveal"><div class="terms"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_plain.cpp</span><span class="term-flags">g++ -O3 -march=native</span></div><div class="term-body sm"><span class="ln"></span><span class="k">float</span> <span class="f">sum_plain</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    <span class="k">float</span> s = <span class="n">0</span>;
+<span class="ln"></span>    <span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++) {
+<span class="ln"></span>        s += a[i];
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">return</span> s;
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">9.6 GB/s</span><span class="x">1.0x</span><span class="note">one add every ~4 cycles</span></div></div><p class="or">or</p><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_accumulate.cpp</span><span class="term-flags">g++ -O3 -march=native</span></div><div class="term-body sm"><span class="ln"></span><span class="k">float</span> <span class="f">sum_plain</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">accumulate</span>(a, a + n, <span class="n">0.0f</span>);
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">9.6 GB/s</span><span class="x">1.0x</span><span class="note">the same serial chain</span></div></div></div><div class="notes step"><ul class="cost "><li><b>Each add waits for the previous one.</b> The loop is one dependency chain.</li><li><b>The vector units are idle.</b> Nothing here can issue in parallel.</li><li><b>This is the whole baseline.</b> Every ratio in this talk is against it.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>09</b> / 44</p></section>
+<!-- SPEAKER NOTE: vim is a great unroller. That is the problem. -->
+<section class="slide" aria-label="slide 10"><div class="slide-content"><p class="kicker reveal">Monster 01 &middot; hand unrolled</p><h2 class="reveal">Four accumulators, <em>four chains</em></h2><div class="body reveal"><div class="terms tight"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_hand.cpp</span><span class="term-flags">g++ -O3 -march=native</span></div><div class="term-body xs"><span class="ln"></span><span class="k">float</span> <span class="f">sum_hand</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    <span class="k">float</span> s0 = <span class="n">0</span>, s1 = <span class="n">0</span>, s2 = <span class="n">0</span>, s3 = <span class="n">0</span>;
+<span class="ln"></span>    <span class="k">int</span> i = <span class="n">0</span>;
+<span class="ln"></span>    <span class="k">for</span> (; i + <span class="n">3</span> &lt; n; i += <span class="n">4</span>) {
+<span class="ln"></span>        s0 += a[i];
+<span class="ln"></span>        s1 += a[i + <span class="n">1</span>];
+<span class="ln"></span>        s2 += a[i + <span class="n">2</span>];
+<span class="ln"></span>        s3 += a[i + <span class="n">3</span>];
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">for</span> (; i &lt; n; i++) {
+<span class="ln"></span>        s0 += a[i];
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">return</span> (s0 + s1) + (s2 + s3);
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">38.0 GB/s</span><span class="x">4.0x</span><span class="note">four chains</span></div></div><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_reduce.cpp</span><span class="term-flags">g++ -O3 -march=native</span></div><div class="term-body xs"><span class="ln"></span><span class="k">float</span> <span class="f">sum_reduce</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">reduce</span>(a, a + n, <span class="n">0.0f</span>);
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">33.8 GB/s</span><span class="x">3.5x</span><span class="note">libstdc++ unrolls by four</span></div></div></div><div class="notes step"><ul class="cost "><li><b>Four copies of one line.</b> The body changes in four places or not at all.</li><li><b>The unroll factor is baked into the source.</b> Retuning means retyping.</li><li><b>A wrong index in one copy still compiles.</b> And still returns a number.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>10</b> / 44</p></section>
+<section class="slide" aria-label="slide 11"><div class="slide-content"><p class="kicker reveal">Monster 02 &middot; macro magic</p><h2 class="reveal">Unrolling through the <em>preprocessor</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_macro.cpp</span><span class="term-flags">g++ -O3 -march=native</span></div><div class="term-body sm"><span class="ln"></span><span class="p">#define ACC4(i, n, BODY)                \</span>
+<span class="ln"></span>    <span class="k">for</span> (; i + <span class="n">3</span> &lt; n; i += <span class="n">4</span>) {         \
+<span class="ln"></span>        <span class="f">BODY</span>(<span class="n">0</span>) <span class="f">BODY</span>(<span class="n">1</span>) <span class="f">BODY</span>(<span class="n">2</span>) <span class="f">BODY</span>(<span class="n">3</span>) \
+<span class="ln"></span>    }
+<span class="ln"></span>
+<span class="ln"></span><span class="k">float</span> <span class="f">sum_macro</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    <span class="k">float</span> s0 = <span class="n">0</span>, s1 = <span class="n">0</span>, s2 = <span class="n">0</span>, s3 = <span class="n">0</span>;
+<span class="ln"></span>    <span class="k">int</span> i = <span class="n">0</span>;
+<span class="ln"></span><span class="p">    #define BODY(k) s##k += a[i + k];</span>
+<span class="ln"></span>    <span class="f">ACC4</span>(i, n, BODY)
+<span class="ln"></span><span class="p">    #undef BODY</span>
+<span class="ln"></span>    <span class="k">for</span> (; i &lt; n; i++) {
+<span class="ln"></span>        s0 += a[i];
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">return</span> (s0 + s1) + (s2 + s3);
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">38.0 GB/s</span><span class="x">4.0x</span><span class="note">same asm as monster 01</span></div></div><div class="notes step"><ul class="cost "><li>The body is written once and the unroll factor is a macro parameter.</li><li><b>Text substitution.</b> No types, no scope: <code>BODY(i++)</code> compiles, and is wrong.</li><li><b>The debugger lands on the invocation line.</b> All four bodies, one line.</li><li><b>It is unreadable.</b></li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>11</b> / 44</p></section>
+<section class="slide" aria-label="slide 12"><div class="slide-content"><p class="kicker reveal">Monster 03 &middot; pragmas</p><h2 class="reveal">Ask the compiler <em>nicely</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_pragma.cpp</span><span class="term-flags">g++ -O3 -march=native</span></div><div class="term-body lg"><span class="ln"></span><span class="k">float</span> <span class="f">sum_pragma_unroll</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    <span class="k">float</span> s = <span class="n">0</span>;
+<span class="ln"></span><span class="p">    #pragma GCC unroll 4</span>
+<span class="ln"></span>    <span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++) {
+<span class="ln"></span>        s += a[i];
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">return</span> s;
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">9.6 GB/s</span><span class="x">1.0x</span><span class="note">no speedup at all</span></div></div><div class="notes step"><p class="lede" style="margin-top:0">The loop is unrolled. The reduction is not.</p><ul class="cost "><li><b>One accumulator, one dependency chain.</b> Unrolling the body does not break it.</li><li>Floating-point addition is not associative, so the compiler may not reassociate.</li><li><b>Nothing warns.</b> The pragma was honoured. The code is still 1.0x.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>12</b> / 44</p></section>
+<section class="slide" aria-label="slide 13"><div class="slide-content"><p class="kicker reveal">Monster 03 &middot; pragmas</p><h2 class="reveal">Every compiler wants its <em>own spelling</em></h2><div class="body stack reveal"><table class="hist"><tr><td class="when">pre-2014</td><td><code>#pragma unroll</code> exists in ICC, IBM XL and CUDA. Not in GCC, not in Clang.</td></tr><tr><td class="when">2014-09 &middot; Clang 3.5</td><td>ships <code>#pragma unroll</code> and <code>#pragma nounroll</code>, plus <code>#pragma clang loop unroll[_count]</code>.</td></tr><tr><td class="when">2018-05 &middot; GCC 8</td><td>adds <code>#pragma GCC unroll n</code> for C, C++, Fortran and Ada.</td></tr><tr><td class="when">2021-10 &middot; Clang 13</td><td>accepts <code>#pragma GCC unroll</code> and <code>nounroll</code>. Also gains <code>#pragma omp unroll</code>.</td></tr><tr><td class="when">2025 &middot; GCC 15</td><td>implements <code>#pragma omp unroll</code>.</td></tr></table><ul class="cost row"><li><b>Some forms are hints, not contracts.</b></li><li><b>The failure mode is silent:</b> slower code, no diagnostic.</li><li>An unrecognized pragma is a warning, maybe the performance report mentions unrolling/vectorization</li></ul></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>13</b> / 44</p></section>
+<section class="slide" aria-label="slide 14"><div class="slide-content"><p class="kicker reveal">Monster 03 &middot; pragmas</p><h2 class="reveal">The pragma that says what we <em>mean</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_omp.cpp</span><span class="term-flags">g++ -O3 -march=native -fopenmp-simd</span></div><div class="term-body lg"><span class="ln"></span><span class="k">float</span> <span class="f">sum_pragma_omp</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    <span class="k">float</span> s = <span class="n">0</span>;
+<span class="ln"></span><span class="p">    #pragma omp simd reduction(+:s)</span>
+<span class="ln"></span>    <span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++) {
+<span class="ln"></span>        s += a[i];
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">return</span> s;
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">74.8 GB/s</span><span class="x">7.8x</span><span class="note">split into lanes, reduce at the end</span></div></div><div class="notes step"><p class="lede" style="margin-top:0"><code>reduction(+:s)</code> is permission, not a hint.</p><ul class="cost "><li>GCC splits the reduction across SIMD lanes and reduces once at the end.</li><li><b>Needs <code>-fopenmp-simd</code>.</b> Forget the flag and the pragma is ignored.</li><li>Still a pragma: outside the language, spelled differently per vendor.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>14</b> / 44</p></section>
+<section class="slide" aria-label="slide 15"><div class="slide-content"><p class="kicker reveal">Monster 04 &middot; dispatch</p><h2 class="reveal">The <em>C++</em> solution.</h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_unrolled.cpp</span><span class="term-flags">g++ -O3 -march=native</span></div><div class="term-body lg"><span class="ln"></span><span class="k">template</span> &lt;<span class="k">int</span> UNROLL&gt;
+<span class="ln"></span><span class="k">float</span> <span class="f">sum_unrolled</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    <span class="k">auto</span> sums = <span class="t">std</span>::<span class="f">array</span>&lt;<span class="k">float</span>, UNROLL&gt;{};
+<span class="ln"></span>    <span class="k">int</span> i = <span class="n">0</span>;
+<span class="ln"></span>    <span class="k">for</span> (; i + UNROLL &lt;= n; i += UNROLL) {
+<span class="ln"></span>        <span class="k">for</span> (<span class="k">int</span> k = <span class="n">0</span>; k &lt; UNROLL; ++k) {
+<span class="ln"></span>            sums[k] += a[i + k];
+<span class="ln"></span>        }
+<span class="ln"></span>    }
+<span class="ln"></span>    sums[<span class="n">0</span>] = <span class="t">std</span>::<span class="f">reduce</span>(a + i, a + n, sums[<span class="n">0</span>]);
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">reduce</span>(sums.<span class="f">begin</span>(), sums.<span class="f">end</span>(), <span class="n">0.0f</span>);
+<span class="ln"></span>}</div></div><div class="notes step"><p class="lede" style="margin-top:0">C++17, and the body is written once.</p><ul class="cost "><li><code>UNROLL</code> is a template parameter, so the inner loop (hopefully) is fully unrolled.</li><li>The accumulators are an array, not four named variables.</li><li><b>One question left:</b> who picks <code>UNROLL</code>?</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>15</b> / 44</p></section>
+<section class="slide" aria-label="slide 16"><div class="slide-content"><p class="kicker reveal">Monster 04 &middot; dispatch</p><h2 class="reveal">&hellip; and the <em>ladder</em> is typed by hand</h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_dispatch.cpp</span><span class="term-flags">g++ -O3 -march=native</span></div><div class="term-body "><span class="ln"></span><span class="k">float</span> <span class="f">sum_dispatch</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n, <span class="k">int</span> unroll) {
+<span class="ln"></span>    <span class="k">if</span> (unroll == <span class="n">2</span>) {
+<span class="ln"></span>        <span class="k">return</span> <span class="f">sum_unrolled</span>&lt;<span class="n">2</span>&gt;(a, n);
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">if</span> (unroll == <span class="n">4</span>) {
+<span class="ln"></span>        <span class="k">return</span> <span class="f">sum_unrolled</span>&lt;<span class="n">4</span>&gt;(a, n);
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">if</span> (unroll == <span class="n">8</span>) {
+<span class="ln"></span>        <span class="k">return</span> <span class="f">sum_unrolled</span>&lt;<span class="n">8</span>&gt;(a, n);
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">if</span> (unroll == <span class="n">16</span>) {
+<span class="ln"></span>        <span class="k">return</span> <span class="f">sum_unrolled</span>&lt;<span class="n">16</span>&gt;(a, n);
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">throw</span> <span class="t">std</span>::<span class="f">invalid_argument</span>(<span class="s">&quot;Unsupported unroll factor&quot;</span>);
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">138.8 GB/s</span><span class="x">14.5x</span><span class="note">UNROLL = 16, and portable</span></div></div><div class="notes step"><ul class="cost "><li><b>One branch per supported factor</b>, written and audited by hand.</li><li>Two parameters and the ladder is O(N&times;M).</li><li>Miss a case and it throws at run time, or silently hits the wrong kernel.</li><li><b>The ladder drifts</b> from the kernels it dispatches to.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>16</b> / 44</p></section>
+<section class="slide" aria-label="slide 17"><div class="slide-content"><p class="kicker reveal">Monster 05 &middot; inline asm</p><h2 class="reveal">Sixteen chains, <em>zero</em> abstraction</h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_asm.cpp</span><span class="term-flags">g++ -O3 -march=native</span></div><div class="term-body xs"><span class="ln"></span><span class="c">// all 16 ymm are accumulators, nothing spills: 128 floats per iteration</span>
+<span class="ln"></span><span class="k">float</span> <span class="f">sum_asm</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    <span class="k">if</span> (n &lt; <span class="n">128</span>) <span class="k">return</span> <span class="f">sum_plain</span>(a, n);            <span class="c">// the loop below always runs once</span>
+<span class="ln"></span>    <span class="k">float</span> r;
+<span class="ln"></span>    <span class="k">long</span> m = n &amp; ~<span class="n">127L</span>;
+<span class="ln"></span>    <span class="k">asm</span> <span class="k">volatile</span>(
+<span class="ln"></span>        <span class="s">&quot;</span><span class="k">vxorps</span> <span class="t">%%ymm0</span>, <span class="t">%%ymm0</span>, <span class="t">%%ymm0</span><span class="c">\n</span><span class="c">\t</span><span class="s">&quot;</span>             <span class="c">// ... and ymm1 to ymm15</span>
+<span class="ln"></span>        <span class="s">&quot;</span><span class="k">xor</span> <span class="t">%%rcx</span>, <span class="t">%%rcx</span><span class="c">\n</span><span class="s">&quot;</span>
+<span class="ln"></span>        <span class="s">&quot;</span><span class="f">1:</span><span class="c">\n</span><span class="c">\t</span><span class="s">&quot;</span>
+<span class="ln"></span>        <span class="s">&quot;</span><span class="k">vaddps</span>    <span class="n">0</span>(<span class="t">%[a]</span>,<span class="t">%%rcx</span>,<span class="n">4</span>), <span class="t">%%ymm0</span>, <span class="t">%%ymm0</span><span class="c">\n</span><span class="c">\t</span><span class="s">&quot;</span>
+<span class="ln"></span>        <span class="s">&quot;</span><span class="k">vaddps</span>   <span class="n">32</span>(<span class="t">%[a]</span>,<span class="t">%%rcx</span>,<span class="n">4</span>), <span class="t">%%ymm1</span>, <span class="t">%%ymm1</span><span class="c">\n</span><span class="c">\t</span><span class="s">&quot;</span> <span class="c">// ... to 480 and ymm15</span>
+<span class="ln"></span>        <span class="s">&quot;</span><span class="k">add</span> <span class="n">$128</span>, <span class="t">%%rcx</span><span class="c">\n</span><span class="c">\t</span><span class="s">&quot;</span>
+<span class="ln"></span>        <span class="s">&quot;</span><span class="k">cmp</span> <span class="t">%[m]</span>, <span class="t">%%rcx</span><span class="c">\n</span><span class="c">\t</span><span class="s">&quot;</span>
+<span class="ln"></span>        <span class="s">&quot;</span><span class="k">jl</span> 1b<span class="c">\n</span><span class="c">\t</span><span class="s">&quot;</span>                                     <span class="c">// then reduce the 16 and sum lanes</span>
+<span class="ln"></span>        <span class="s">&quot;</span><span class="k">vmovss</span> <span class="t">%%xmm0</span>, <span class="t">%[r]</span><span class="c">\n</span><span class="c">\t</span><span class="s">&quot;</span>
+<span class="ln"></span>        : [r] <span class="s">&quot;=m&quot;</span>(r)
+<span class="ln"></span>        : [a] <span class="s">&quot;r&quot;</span>(a), [m] <span class="s">&quot;r&quot;</span>(m)
+<span class="ln"></span>        : <span class="s">&quot;rcx&quot;</span>, <span class="s">&quot;ymm0&quot;</span>, <span class="c">/* ... */</span> <span class="s">&quot;ymm15&quot;</span>, <span class="s">&quot;memory&quot;</span>, <span class="s">&quot;cc&quot;</span>);
+<span class="ln"></span>    <span class="k">for</span> (<span class="k">long</span> i = m; i &lt; n; i++) r += a[i];         <span class="c">// the scalar tail</span>
+<span class="ln"></span>    <span class="k">return</span> r;
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">248.2 GB/s</span><span class="x">25.9x</span><span class="note">16 chains on 2 FP ports, no spill</span></div></div><div class="notes step"><ul class="cost "><li><b>Optimal the day it is written.</b> Compilers improve; this does not.</li><li>One ISA. AVX-512, NEON, SVE: start again.</li><li>The register allocator is now a human, and the human is now on call.</li><li>Debuggers and sanitizers see an opaque block.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>17</b> / 44</p></section>
+<!-- SPEAKER NOTE: FFTW is the honest version of this. Most in-house versions are not FFTW. -->
+<section class="slide" aria-label="slide 18"><div class="slide-content"><p class="kicker reveal">Monster 06 &middot; code generation</p><h2 class="reveal">Write a <em>program</em> that writes the kernels</h2><p class="lede reveal">OCaml, or any other language, emits the C++ that the compiler then sees.</p><div class="body reveal"><ul class="cost full"><li><b>Two languages, two toolchains</b>, one more build step to maintain.</li><li><b>The generated output gets no compile-time validation from the generator.</b> The generator's type system does not reach the emitted code.</li><li><b>Compile times explode.</b></li><li><b>It does not generalize.</b> One more kernel shape and the world is regenerated.</li></ul></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>18</b> / 44</p></section>
+<section class="slide" aria-label="slide 19"><div class="slide-content"><p class="kicker reveal">Honourable (?) mention</p><h2 class="reveal">Compiler <em>built-in</em> vectors</h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_builtin.cpp</span><span class="term-flags">g++ -O3 -march=native</span></div><div class="term-body "><span class="ln"></span><span class="k">typedef</span> <span class="k">float</span> v8 <span class="f">__attribute__</span>((<span class="f">vector_size</span>(<span class="n">32</span>), <span class="f">aligned</span>(<span class="n">4</span>)));
+<span class="ln"></span>
+<span class="ln"></span><span class="k">float</span> <span class="f">sum_builtin</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    v8 s[<span class="n">16</span>] = {};
+<span class="ln"></span>    <span class="k">int</span> i = <span class="n">0</span>;
+<span class="ln"></span>    <span class="k">for</span> (; i + <span class="n">127</span> &lt; n; i += <span class="n">128</span>) {
+<span class="ln"></span>        <span class="k">for</span> (<span class="k">int</span> k = <span class="n">0</span>; k &lt; <span class="n">16</span>; k++) {
+<span class="ln"></span>            s[k] += *(v8 *)(a + i + <span class="n">8</span> * k);
+<span class="ln"></span>        }
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">const</span> v8 t = <span class="t">std</span>::<span class="f">reduce</span>(s, s + <span class="n">16</span>, <span class="f">v8</span>{});
+<span class="ln"></span>    <span class="k">const</span> <span class="k">auto</span> *lanes = <span class="k">reinterpret_cast</span>&lt;<span class="k">const</span> <span class="k">float</span> *&gt;(&amp;t);
+<span class="ln"></span>    <span class="k">const</span> <span class="k">float</span> r = <span class="t">std</span>::<span class="f">reduce</span>(lanes, lanes + <span class="n">8</span>, <span class="n">0.0f</span>);
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">reduce</span>(a + i, a + n, r);
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">240.9 GB/s</span><span class="x">25.1x</span><span class="note">matches the asm, no intrinsic in sight</span></div></div><div class="notes step"><p class="lede" style="margin-top:0">Same 16 accumulators. The compiler allocates the registers.</p><ul class="cost "><li>No intrinsic, no ISA name anywhere in the source.</li><li><b>16 accumulators fit the register file.</b></li><li>Still a vendor extension, not the standard.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>19</b> / 44</p></section>
+<section class="slide" aria-label="slide 20"><div class="slide-content"><p class="kicker reveal">Scoreboard</p><h2 class="reveal">What the <em>monsters</em> bought</h2><div class="body stack reveal"><table class="score solo"><tr><th class="name">implementation</th><th class="grp">GB/s</th><th></th><th class="grp">vs plain</th></tr><tr class="dim"><td class="name">plain loop</td><td class="val">9.6</td><td class="bar l"><span class="bg"><span class="fill" style="width:3.7%"></span></span></td><td class="x">1.0x</td></tr><tr><td class="name">std::reduce</td><td class="val">33.8</td><td class="bar l"><span class="bg"><span class="fill" style="width:13.0%"></span></span></td><td class="x">3.5x</td></tr><tr><td class="name">01 &nbsp;hand unrolled &times;4</td><td class="val">38.0</td><td class="bar l"><span class="bg"><span class="fill" style="width:14.6%"></span></span></td><td class="x">4.0x</td></tr><tr><td class="name">02 &nbsp;macro unrolled &times;4</td><td class="val">38.0</td><td class="bar l"><span class="bg"><span class="fill" style="width:14.6%"></span></span></td><td class="x">4.0x</td></tr><tr class="dim"><td class="name">03a #pragma GCC unroll 4</td><td class="val">9.6</td><td class="bar l"><span class="bg"><span class="fill" style="width:3.7%"></span></span></td><td class="x">1.0x</td></tr><tr><td class="name">03b #pragma omp simd reduction</td><td class="val">74.8</td><td class="bar l"><span class="bg"><span class="fill" style="width:28.8%"></span></span></td><td class="x">7.8x</td></tr><tr><td class="name">04 &nbsp;dispatch&lt;16&gt;</td><td class="val">138.8</td><td class="bar l"><span class="bg"><span class="fill" style="width:53.4%"></span></span></td><td class="x">14.5x</td></tr><tr class="hi"><td class="name">05 &nbsp;inline asm, 16 ymm</td><td class="val">248.2</td><td class="bar l"><span class="bg"><span class="fill" style="width:95.5%"></span></span></td><td class="x">25.9x</td></tr><tr><td class="name">&plus; &nbsp;built-in vectors</td><td class="val">240.9</td><td class="bar l"><span class="bg"><span class="fill" style="width:92.7%"></span></span></td><td class="x">25.1x</td></tr></table></div><p class="foot reveal">Core Ultra 7 155H (Meteor Lake), AVX2 &middot; gcc 17.0.0 20260914 &middot; <code>-O3 -march=native -fopenmp-simd</code> &middot; n = 8192 floats, L1-resident, 64B-aligned &middot; min of 20000 &times; best of 3, pinned to one core &middot; <code>code/code.cpp</code></p></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>20</b> / 44</p></section>
+<section class="slide" aria-label="slide 21"><div class="slide-content"><p class="kicker reveal">The bill</p><h2 class="reveal">26x faster. <em>At what cost?</em></h2><div class="body reveal"><ol class="ranked"><li><h3>Maintainability</h3><p>The unroll factor lives in four places at once</p></li><li><h3>Portability</h3><p>One ISA, one compiler, one spelling of the pragma</p></li><li><h3>Debuggability</h3><p>The debugger stops at the macro invocation, or at an opaque asm block</p></li><li><h3>Readability</h3><p>The intent is buried under the mechanism</p></li><li><h3>Drift</h3><p>The ladder and the kernels stop agreeing, silently</p></li></ol></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>21</b> / 44</p></section>
+<section class="slide section-slide" aria-label="slide 22"><div class="slide-content"><div class="statement"><p class="kicker reveal">Part two</p><p class="big reveal">C++ already <em>has</em> the tools.</p><p class="sub reveal"><code>if constexpr</code>, fold expressions, template packs and concepts express the intent in code the compiler can still optimize.<br><br>Since C++17 I reach for the monsters less and less. As compilers improve, the performance is free. New architectures are free. C++26 reflection makes it shorter still.</p></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>22</b> / 44</p></section>
+<section class="slide" aria-label="slide 23"><div class="slide-content"><p class="kicker reveal">C++17</p><h2 class="reveal">The <em>helper</em> writes the body</h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_pack17.cpp</span><span class="term-flags">g++ -std=c++17 -O3 -march=native</span></div><div class="term-body "><span class="ln"></span><span class="k">template</span> &lt;<span class="k">class</span> F, <span class="k">int</span>... K&gt;
+<span class="ln"></span><span class="k">void</span> <span class="f">static_for</span>(F f, <span class="t">std</span>::<span class="f">integer_sequence</span>&lt;<span class="k">int</span>, K...&gt;) {
+<span class="ln"></span>    (<span class="f">f</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="k">int</span>, K&gt;{}), ...);
+<span class="ln"></span>}
+<span class="ln"></span><span class="k">template</span> &lt;<span class="k">int</span> UNROLL&gt;
+<span class="ln"></span><span class="k">float</span> <span class="f">sum_pack17</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) {
+<span class="ln"></span>    <span class="k">auto</span> s = <span class="t">std</span>::<span class="f">array</span>&lt;<span class="k">float</span>, UNROLL&gt;{};
+<span class="ln"></span>    <span class="k">int</span> i = <span class="n">0</span>;
+<span class="ln"></span>    <span class="k">for</span> (; i + UNROLL - <span class="n">1</span> &lt; n; i += UNROLL) {
+<span class="ln"></span>        <span class="f">static_for</span>([&amp;](<span class="k">auto</span> k) { s[k] += a[i + k]; },
+<span class="ln"></span>                   <span class="t">std</span>::<span class="f">make_integer_sequence</span>&lt;<span class="k">int</span>, UNROLL&gt;{});
+<span class="ln"></span>    }
+<span class="ln"></span>    s[<span class="n">0</span>] = <span class="t">std</span>::<span class="f">reduce</span>(a + i, a + n, s[<span class="n">0</span>]);
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">reduce</span>(s.<span class="f">begin</span>(), s.<span class="f">end</span>(), <span class="n">0.0f</span>);
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">75.2 GB/s</span><span class="x">7.8x</span><span class="note">UNROLL = 8</span></div></div><div class="notes"><p class="lede" style="margin-top:0">Monster 01, with <code>UNROLL</code> accumulators instead of four.</p><ul class="cost tight"><li><code>static_for</code> passes the index as an <code>integral_constant</code>, so <code>s[k]</code> is a compile-time index.</li><li><b>The body is typed once</b> and the compiler writes the copies.</li><li>A wrong index is now a compile error, not a silent wrong answer.</li><li><b>Four lines of library, and it ships today</b> on the compiler you already have.</li><li>This function is the whole idea behind <code>poet::static_for</code>.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>23</b> / 44</p></section>
+<section class="slide" aria-label="slide 24"><div class="slide-content"><p class="kicker reveal">C++20</p><h2 class="reveal">The <em>pack</em> writes the body</h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_pack.cpp</span><span class="term-flags">g++ -std=c++20 -O3 -march=native</span></div><div class="term-body "><span class="ln"></span><span class="k">template</span> &lt;<span class="k">int</span> UNROLL&gt;
+<span class="ln"></span><span class="k">auto</span> <span class="f">sum_pack</span>(<span class="t">std</span>::<span class="f">span</span>&lt;<span class="k">const</span> <span class="k">float</span>&gt; a) -&gt; <span class="k">float</span> {
+<span class="ln"></span>    <span class="k">auto</span> sums = <span class="t">std</span>::<span class="f">array</span>&lt;<span class="k">float</span>, UNROLL&gt;{};
+<span class="ln"></span>    <span class="k">const</span> <span class="k">int</span> n = <span class="k">int</span>(a.<span class="f">size</span>());
+<span class="ln"></span>    <span class="k">int</span> i = <span class="n">0</span>;
+<span class="ln"></span>    <span class="k">for</span> (; i + UNROLL - <span class="n">1</span> &lt; n; i += UNROLL) {
+<span class="ln"></span>        [&amp;]&lt;<span class="k">int</span>... K&gt;(<span class="t">std</span>::<span class="f">integer_sequence</span>&lt;<span class="k">int</span>, K...&gt;) {
+<span class="ln"></span>            ((sums[K] += a[i + K]), ...);
+<span class="ln"></span>        }(<span class="t">std</span>::<span class="f">make_integer_sequence</span>&lt;<span class="k">int</span>, UNROLL&gt;{});
+<span class="ln"></span>    }
+<span class="ln"></span>    sums[<span class="n">0</span>] = <span class="t">std</span>::<span class="f">reduce</span>(a.<span class="f">begin</span>() + i, a.<span class="f">end</span>(), sums[<span class="n">0</span>]);
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">reduce</span>(sums.<span class="f">begin</span>(), sums.<span class="f">end</span>(), <span class="n">0.0f</span>);
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">75.2 GB/s</span><span class="x">7.8x</span><span class="note">UNROLL = 8</span></div></div><div class="notes"><p class="lede" style="margin-top:0">The same kernel, with the helper deleted.</p><ul class="cost "><li>The templated lambda takes the pack, so <code>static_for</code> is no longer needed.</li><li>The fold expression emits one <code>sums[K] += a[i + K]</code> per index.</li><li><b>One body still</b>, and one compile error still for a wrong index.</li><li>UNROLL = 8 here. The dispatch slide lets the machine pick 16.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>24</b> / 44</p></section>
+<section class="slide" aria-label="slide 25"><div class="slide-content"><p class="kicker reveal">C++26</p><h2 class="reveal">The pack becomes a <em>statement</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_expand.cpp</span><span class="term-flags">g++ -std=c++26 -O3 -march=native</span></div><div class="term-body sm"><span class="ln"></span><span class="k">template</span> &lt;<span class="k">int</span> UNROLL&gt;
+<span class="ln"></span><span class="k">float</span> <span class="f">sum_expand</span>(<span class="t">std</span>::<span class="f">span</span>&lt;<span class="k">const</span> <span class="k">float</span>&gt; a) {
+<span class="ln"></span>    <span class="k">const</span> <span class="k">int</span> n = <span class="k">int</span>(a.<span class="f">size</span>());
+<span class="ln"></span>    <span class="k">auto</span> s = <span class="t">std</span>::<span class="f">array</span>&lt;<span class="k">float</span>, UNROLL&gt;{};
+<span class="ln"></span>    <span class="k">int</span> i = <span class="n">0</span>;
+<span class="ln"></span>    <span class="k">for</span> (; i + UNROLL - <span class="n">1</span> &lt; n; i += UNROLL) {
+<span class="ln"></span>        <span class="k">template</span> <span class="k">for</span> (<span class="k">constexpr</span> <span class="k">int</span> k : <span class="t">std</span>::<span class="t">views</span>::<span class="f">iota</span>(<span class="n">0</span>, UNROLL)) {
+<span class="ln"></span>            s[k] += a[i + k];
+<span class="ln"></span>        }
+<span class="ln"></span>    }
+<span class="ln"></span>    s[<span class="n">0</span>] = <span class="t">std</span>::<span class="f">reduce</span>(a.<span class="f">begin</span>() + i, a.<span class="f">end</span>(), s[<span class="n">0</span>]);
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">reduce</span>(s.<span class="f">begin</span>(), s.<span class="f">end</span>(), <span class="n">0.0f</span>);
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">75.2 GB/s</span><span class="x">7.8x</span><span class="note">UNROLL = 8</span></div></div><div class="notes"><p class="lede" style="margin-top:0"><code>template for</code> repeats the body once per element.</p><ul class="cost "><li>Inside each copy <code>k</code> is a constant expression.</li><li><b>No lambda, no <code>integer_sequence</code>, no fold.</b></li><li><code>s[k] += a[i + k]</code></li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>25</b> / 44</p></section>
+<!-- SPEAKER NOTE: This is the hinge: a runtime number has to pick a compile-time kernel. -->
+<section class="slide" aria-label="slide 26"><div class="slide-content"><p class="kicker reveal">Dispatch</p><h2 class="reveal">The factor arrives at <em>run time</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">dispatch.cpp</span><span class="term-flags">g++ -std=c++17 -O3 -march=native</span></div><div class="term-body lg"><span class="ln"></span><span class="k">const</span> <span class="k">auto</span> unroll = <span class="f">choose_unroll</span>();</div></div><div class="notes"><p class="lede" style="margin-top:0">Assume <code>choose_unroll()</code> selects an unroll factor for the machine.</p><ul class="cost "><li><code>if constexpr</code> needs a constant. This is not one.</li><li><code>unroll</code> is an <code>int</code>; the kernels are templates.</li><li><b>Every monster so far solved this with a ladder.</b></li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>26</b> / 44</p></section>
+<section class="slide" aria-label="slide 27"><div class="slide-content"><p class="kicker reveal">C++17 &middot; dispatch</p><h2 class="reveal">One fold, <em>no ladder</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_dispatch_fold.cpp</span><span class="term-flags">g++ -std=c++17 -O3 -march=native</span></div><div class="term-body xs"><span class="ln"></span><span class="k">template</span> &lt;<span class="k">int</span>... UNROLL, <span class="k">class</span> F&gt;
+<span class="ln"></span><span class="k">bool</span> <span class="f">dispatch</span>(<span class="k">int</span> unroll, F f, <span class="t">std</span>::<span class="f">integer_sequence</span>&lt;<span class="k">int</span>, UNROLL...&gt;) {
+<span class="ln"></span>    <span class="k">return</span> ((unroll == UNROLL ? (<span class="f">f</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="k">int</span>, UNROLL&gt;{}), <span class="k">true</span>)
+<span class="ln"></span>                              : <span class="k">false</span>) || ...);
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">float</span> <span class="f">sum_pack_dispatch</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n, <span class="k">int</span> unroll) {  <span class="c">// unroll known at run time only</span>
+<span class="ln"></span>    <span class="k">float</span> r = <span class="n">0</span>;
+<span class="ln"></span>    <span class="k">if</span> (!<span class="f">dispatch</span>(unroll, [&amp;](<span class="k">auto</span> k) { r = <span class="f">sum_pack17</span>&lt;k&gt;(a, n); },
+<span class="ln"></span>                  <span class="t">std</span>::<span class="f">integer_sequence</span>&lt;<span class="k">int</span>, <span class="n">2</span>, <span class="n">4</span>, <span class="n">8</span>, <span class="n">16</span>, <span class="n">32</span>&gt;{})) {
+<span class="ln"></span>        r = <span class="f">sum_plain</span>(a, n);   <span class="c">// no kernel for this unroll</span>
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">return</span> r;
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">135.4 GB/s</span><span class="x">14.1x</span><span class="note">the monster 04 kernel, no ladder</span></div></div><div class="notes"><p class="lede" style="margin-top:0"><code>unroll</code> is known at run time only.</p><ul class="cost "><li><code>if constexpr</code> cannot branch on a runtime value. The fold can.</li><li><b>The list of supported factors is the code.</b> It cannot drift.</li><li>Short-circuit <code>||</code> stops at the first match.</li><li>No match returns <code>false</code>, so the fallback is explicit, not a throw.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>27</b> / 44</p></section>
+<section class="slide" aria-label="slide 28"><div class="slide-content"><p class="kicker reveal">C++26</p><h2 class="reveal">The ladder <em>is</em> the list</h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_expand_best.cpp</span><span class="term-flags">g++ -std=c++26 -O3 -march=native</span></div><div class="term-body sm"><span class="ln"></span><span class="k">float</span> <span class="f">sum_expand_best</span>(<span class="t">std</span>::<span class="f">span</span>&lt;<span class="k">const</span> <span class="k">float</span>&gt; a) {
+<span class="ln"></span>    <span class="k">const</span> <span class="k">int</span> unroll = <span class="f">choose_unroll</span>();
+<span class="ln"></span>    <span class="k">template</span> <span class="k">for</span> (<span class="k">constexpr</span> <span class="k">int</span> UNROLL : {<span class="n">2</span>, <span class="n">4</span>, <span class="n">8</span>, <span class="n">16</span>, <span class="n">32</span>}) {
+<span class="ln"></span>        <span class="k">if</span> (unroll == UNROLL) {
+<span class="ln"></span>            <span class="k">return</span> <span class="f">sum_expand</span>&lt;UNROLL&gt;(a);
+<span class="ln"></span>        }
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">return</span> <span class="f">sum_plain</span>(a.<span class="f">data</span>(), <span class="k">int</span>(a.<span class="f">size</span>()));   <span class="c">// no kernel for this factor</span>
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">130.0 GB/s</span><span class="x">13.6x</span><span class="note">the ladder, deleted</span></div></div><div class="notes"><p class="lede" style="margin-top:0">Assume <code>choose_unroll()</code> picks a factor for the machine.</p><ul class="cost "><li>The braced list is the set of kernels that exist. Add 32 and the dispatch grows with it.</li><li><b>Every branch is generated from the same source line.</b></li><li>The fallback is one call, not a throw.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>28</b> / 44</p></section>
+<section class="slide" aria-label="slide 29"><div class="slide-content"><p class="kicker reveal">C++26 &middot; std::simd</p><h2 class="reveal">Vectors <em>in the language</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_std_simd.cpp</span><span class="term-flags">g++ -std=c++26 -O3 -march=native</span></div><div class="term-body sm"><span class="ln"></span><span class="k">template</span> &lt;<span class="k">int</span> UNROLL&gt;
+<span class="ln"></span><span class="k">float</span> <span class="f">sum_std_simd</span>(<span class="t">std</span>::<span class="f">span</span>&lt;<span class="k">const</span> <span class="k">float</span>&gt; a) {
+<span class="ln"></span>    <span class="k">namespace</span> <span class="t">simd</span> = <span class="t">std</span>::<span class="t">simd</span>;
+<span class="ln"></span>    <span class="k">using</span> v = <span class="t">simd</span>::<span class="f">vec</span>&lt;<span class="k">float</span>&gt;;
+<span class="ln"></span>    <span class="k">static</span> <span class="k">constexpr</span> <span class="k">int</span> width = <span class="k">int</span>(<span class="t">v</span>::<span class="f">size</span>());
+<span class="ln"></span>    <span class="k">static</span> <span class="k">constexpr</span> <span class="k">int</span> step = UNROLL * width;
+<span class="ln"></span>    <span class="k">const</span> <span class="k">int</span> n = <span class="k">int</span>(a.<span class="f">size</span>());
+<span class="ln"></span>    <span class="k">const</span> <span class="k">int</span> vector_end = n - n % step;
+<span class="ln"></span>    <span class="t">std</span>::<span class="f">array</span>&lt;v, UNROLL&gt; <span class="f">s</span>{};
+<span class="ln"></span>    <span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; vector_end; i += step) {
+<span class="ln"></span>        <span class="k">template</span> <span class="k">for</span> (<span class="k">constexpr</span> <span class="k">int</span> k : <span class="t">std</span>::<span class="t">views</span>::<span class="f">iota</span>(<span class="n">0</span>, UNROLL)) {
+<span class="ln"></span>            s[k] += <span class="t">simd</span>::<span class="f">unchecked_load</span>&lt;v&gt;(a.<span class="f">data</span>() + i + k * width, width);
+<span class="ln"></span>        }
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">const</span> v total = <span class="t">std</span>::<span class="f">reduce</span>(s.<span class="f">begin</span>(), s.<span class="f">end</span>(), <span class="f">v</span>{});
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">reduce</span>(a.<span class="f">data</span>() + vector_end, a.<span class="f">data</span>() + n,
+<span class="ln"></span>                           <span class="t">simd</span>::<span class="f">reduce</span>(total, <span class="t">std</span>::<span class="f">plus</span>&lt;&gt;{}));
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">235.7 GB/s</span><span class="x">24.6x</span><span class="note">within 6% of the hand-written asm</span></div></div><div class="notes"><p class="lede" style="margin-top:0">Five standard pieces, no intrinsics.</p><ul class="cost tight"><li><code>std::simd::vec&lt;float&gt;</code> picks the native vector width.</li><li><code>choose_unroll()</code> picks the number of independent accumulators.</li><li><code>template for</code> writes the load list.</li><li><code>std::reduce</code> combines the vectors, then the scalar tail, so <code>n</code> needs no precondition.</li><li><code>std::simd::reduce</code> turns the last vector into one float.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>29</b> / 44</p></section>
+<section class="slide" aria-label="slide 30"><div class="slide-content"><p class="kicker reveal">C++26 &middot; std::simd</p><h2 class="reveal">Same dispatch, <em>SIMD</em> kernels</h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_std_simd_best.cpp</span><span class="term-flags">g++ -std=c++26 -O3 -march=native</span></div><div class="term-body "><span class="ln"></span><span class="k">float</span> <span class="f">sum_std_simd_best</span>(<span class="t">std</span>::<span class="f">span</span>&lt;<span class="k">const</span> <span class="k">float</span>&gt; a) {
+<span class="ln"></span>    <span class="k">const</span> <span class="k">int</span> unroll = <span class="f">choose_unroll</span>();
+<span class="ln"></span>    <span class="k">template</span> <span class="k">for</span> (<span class="k">constexpr</span> <span class="k">int</span> UNROLL : {<span class="n">2</span>, <span class="n">4</span>, <span class="n">8</span>, <span class="n">16</span>, <span class="n">32</span>}) {
+<span class="ln"></span>        <span class="k">if</span> (unroll == UNROLL) {
+<span class="ln"></span>            <span class="k">return</span> <span class="f">sum_std_simd</span>&lt;UNROLL&gt;(a);
+<span class="ln"></span>        }
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="k">return</span> <span class="f">sum_plain</span>(a.<span class="f">data</span>(), <span class="k">int</span>(a.<span class="f">size</span>()));
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">235.7 GB/s</span><span class="x">24.6x</span><span class="note">within 6% of the hand-written asm</span></div></div><div class="notes"><p class="lede" style="margin-top:0">This is the whole selection logic.</p><ul class="cost "><li>The kernel is generic in <code>UNROLL</code>. The dispatch is generic in the list.</li><li><b>Nothing here names an ISA</b>, so a wider machine needs no new code. The hand-written asm would have to be rewritten for it.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>30</b> / 44</p></section>
+<section class="slide" aria-label="slide 31"><div class="slide-content"><p class="kicker reveal">Scoreboard</p><h2 class="reveal">Standard C++, <em>no monsters</em></h2><div class="body stack reveal"><table class="score solo"><tr><th class="name">implementation</th><th class="grp">GB/s</th><th></th><th class="grp">vs plain</th></tr><tr class="dim"><td class="name">plain loop</td><td class="val">9.6</td><td class="bar l"><span class="bg"><span class="fill" style="width:3.7%"></span></span></td><td class="x">1.0x</td></tr><tr class="dim"><td class="name">05 inline asm, 16 ymm</td><td class="val">248.2</td><td class="bar l"><span class="bg"><span class="fill" style="width:95.5%"></span></span></td><td class="x">25.9x</td></tr><tr><td class="name">C++17 static_for, UNROLL 8</td><td class="val">75.2</td><td class="bar l"><span class="bg"><span class="fill" style="width:28.9%"></span></span></td><td class="x">7.8x</td></tr><tr><td class="name">C++20 pack, UNROLL 8</td><td class="val">75.2</td><td class="bar l"><span class="bg"><span class="fill" style="width:28.9%"></span></span></td><td class="x">7.8x</td></tr><tr><td class="name">C++26 template for, UNROLL 8</td><td class="val">75.2</td><td class="bar l"><span class="bg"><span class="fill" style="width:28.9%"></span></span></td><td class="x">7.8x</td></tr><tr><td class="name">fold dispatch</td><td class="val">135.4</td><td class="bar l"><span class="bg"><span class="fill" style="width:52.1%"></span></span></td><td class="x">14.1x</td></tr><tr><td class="name">template for dispatch</td><td class="val">130.0</td><td class="bar l"><span class="bg"><span class="fill" style="width:50.0%"></span></span></td><td class="x">13.6x</td></tr><tr class="hi"><td class="name">std::simd &plus; dispatch</td><td class="val">235.7</td><td class="bar l"><span class="bg"><span class="fill" style="width:90.7%"></span></span></td><td class="x">24.6x</td></tr></table><div class="score-legend"><span><b>Core Ultra 7 155H</b> &middot; Meteor Lake, AVX2</span><span>n = 8192 floats, L1-resident &middot; min of 20000 &times; best of 3</span></div></div><p class="foot reveal">The platform probe gives a register budget. The dispatch keeps the machine policy out of the kernel body. 135.4 GB/s at the selected UNROLL = 16.</p></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>31</b> / 44</p></section>
+<section class="slide" aria-label="slide 32"><div class="slide-content"><p class="kicker reveal">poet &middot; C++17</p><h2 class="reveal">The manual ladder becomes <em>one call</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">poet_api.cpp</span><span class="term-flags">g++ -std=c++17 -O3 -march=native</span></div><div class="term-body "><span class="ln"></span><span class="t">poet</span>::<span class="f">static_for</span>&lt;Begin, End, Step&gt;([](<span class="k">auto</span> I) { <span class="f">f</span>(I); });
+<span class="ln"></span>
+<span class="ln"></span><span class="t">poet</span>::<span class="f">dynamic_for</span>&lt;Unroll&gt;(begin, end, step, [](<span class="k">auto</span> i) { <span class="f">f</span>(i); });
+<span class="ln"></span>
+<span class="ln"></span><span class="t">poet</span>::<span class="f">dynamic_for</span>&lt;Unroll, Step&gt;(begin, end, [](<span class="k">auto</span> i) { <span class="f">f</span>(i); });
+<span class="ln"></span>
+<span class="ln"></span><span class="t">poet</span>::<span class="f">dynamic_for</span>&lt;Unroll, Step&gt;(begin, end,
+<span class="ln"></span>    [](<span class="k">auto</span> lane, <span class="k">auto</span> i) { sums[lane] += <span class="f">f</span>(i); });
+<span class="ln"></span>
+<span class="ln"></span><span class="t">poet</span>::<span class="f">dispatch</span>(<span class="f">F</span>{}, <span class="t">poet</span>::<span class="f">dispatch_param</span>&lt;Values&gt;{value}, args...);</div></div><div class="notes"><p class="lede" style="margin-top:0">Three functions, five forms. That is the whole API.</p><ul class="cost tight"><li><code>static_for&lt;Begin, End, Step&gt;</code> passes a compile-time index.</li><li><code>dynamic_for</code> takes the same range at run time and unrolls it by <code>Unroll</code>.</li><li><code>Step</code> folds the stride when it is a template parameter, and stays runtime as an argument.</li><li>The lane form selects an independent sum.</li><li><code>dispatch</code> selects a template argument at run time.</li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>32</b> / 44</p></section>
+<section class="slide" aria-label="slide 33"><div class="slide-content"><p class="kicker reveal">poet &middot; C++17</p><h2 class="reveal">Kernel and dispatch, <em>no ladder</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_poet.cpp</span><span class="term-flags">g++ -std=c++17 -O3 -march=native</span></div><div class="term-body sm"><span class="ln"></span><span class="k">template</span> &lt;<span class="k">int</span> UNROLL&gt;
+<span class="ln"></span><span class="k">auto</span> <span class="f">sum_poet</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) -&gt; <span class="k">float</span> {
+<span class="ln"></span>    <span class="k">auto</span> s = <span class="t">std</span>::<span class="f">array</span>&lt;<span class="k">float</span>, UNROLL&gt;{};
+<span class="ln"></span>    <span class="t">poet</span>::<span class="f">dynamic_for</span>&lt;UNROLL&gt;(<span class="n">0</span>, n,
+<span class="ln"></span>        [&amp;](<span class="k">auto</span> lane, <span class="k">auto</span> i) { s[lane] += a[i]; });
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">reduce</span>(s.<span class="f">begin</span>(), s.<span class="f">end</span>(), <span class="n">0.0f</span>);
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">using</span> unrolls = <span class="t">std</span>::<span class="f">integer_sequence</span>&lt;<span class="k">int</span>, <span class="n">2</span>, <span class="n">4</span>, <span class="n">8</span>, <span class="n">16</span>, <span class="n">32</span>&gt;;
+<span class="ln"></span>
+<span class="ln"></span><span class="k">auto</span> <span class="f">sum_poet_dispatch</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n, <span class="k">int</span> unroll) -&gt; <span class="k">float</span> {
+<span class="ln"></span>    <span class="k">return</span> <span class="t">poet</span>::<span class="f">dispatch</span>(<span class="t">poet</span>::throw_on_no_match,
+<span class="ln"></span>        [=](<span class="k">auto</span> tag) { <span class="k">return</span> <span class="f">sum_poet</span>&lt;tag&gt;(a, n); },
+<span class="ln"></span>        <span class="t">poet</span>::<span class="f">dispatch_param</span>&lt;unrolls&gt;{unroll});
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">135.4 GB/s</span><span class="x">14.1x</span><span class="note">monster 04, in C++17</span></div></div><div class="notes"><p class="lede" style="margin-top:0">The remainder loop is inside <code>dynamic_for</code>.</p><ul class="cost "><li><code>unrolls</code> is the list of kernels that exist. It appears once.</li><li><code>poet::throw_on_no_match</code> is an object, not a type: <b>no braces</b>.</li><li><b>Nothing here is C++20.</b></li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>33</b> / 44</p></section>
+<section class="slide" aria-label="slide 34"><div class="slide-content"><p class="kicker reveal">poet &plus; xsimd &middot; C++17</p><h2 class="reveal"><em>std::simd</em>, nine years early</h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_xsimd.cpp</span><span class="term-flags">g++ -std=c++17 -O3 -march=native</span></div><div class="term-body sm"><span class="ln"></span><span class="k">template</span> &lt;<span class="k">int</span> UNROLL&gt;
+<span class="ln"></span><span class="k">auto</span> <span class="f">sum_xsimd</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) -&gt; <span class="k">float</span> {
+<span class="ln"></span>    <span class="k">using</span> v = <span class="t">xsimd</span>::<span class="f">batch</span>&lt;<span class="k">float</span>, <span class="t">xsimd</span>::best_arch&gt;;
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t width = <span class="t">v</span>::size;
+<span class="ln"></span>    <span class="k">auto</span> s = <span class="t">std</span>::<span class="f">array</span>&lt;v, UNROLL&gt;{};
+<span class="ln"></span>    <span class="k">const</span> <span class="k">auto</span> block = <span class="t">std</span>::<span class="f">size_t</span>{UNROLL} * width;      <span class="c">// power of two</span>
+<span class="ln"></span>    <span class="k">const</span> <span class="k">auto</span> vector_end = <span class="t">std</span>::<span class="f">size_t</span>(n) &amp; ~(block - <span class="n">1</span>);
+<span class="ln"></span>    <span class="t">poet</span>::<span class="f">dynamic_for</span>&lt;UNROLL, width&gt;(<span class="t">std</span>::<span class="f">size_t</span>{<span class="n">0</span>}, vector_end,
+<span class="ln"></span>        [&amp;](<span class="k">auto</span> lane, <span class="t">std</span>::size_t i) {
+<span class="ln"></span>            s[lane] += <span class="t">v</span>::<span class="f">load_unaligned</span>(a + i);
+<span class="ln"></span>        });
+<span class="ln"></span>
+<span class="ln"></span>    <span class="k">const</span> v total = <span class="t">std</span>::<span class="f">reduce</span>(s.<span class="f">begin</span>(), s.<span class="f">end</span>(), <span class="f">v</span>(<span class="n">0.0f</span>));
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">reduce</span>(a + vector_end, a + n, <span class="t">xsimd</span>::<span class="f">reduce_add</span>(total));
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">230.8 GB/s</span><span class="x">24.1x</span><span class="note">within 3% of C++26 std::simd</span></div></div><div class="notes"><p class="lede" style="margin-top:0">poet supplies the control flow, xsimd the vector type.</p><ul class="cost "><li><code>xsimd::best_arch</code> resolves the widest ISA the build targets.</li><li><code>poet::dynamic_for</code> steps by <code>UNROLL &times; width</code> elements.</li><li><b>Nothing in the kernel needs a standard past C++17.</b></li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>34</b> / 44</p></section>
+<section class="slide" aria-label="slide 35"><div class="slide-content"><p class="kicker reveal">Machine policy</p><h2 class="reveal">How many <em>accumulators</em> fit?</h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">choose_unroll.cpp</span><span class="term-flags">g++ -std=c++17 -O3 -march=native</span></div><div class="term-body sm"><span class="ln"></span><span class="k">auto</span> <span class="f">choose_unroll</span>() -&gt; <span class="k">int</span> {
+<span class="ln"></span>    <span class="k">const</span> <span class="k">auto</span> registers = <span class="k">int</span>(<span class="t">poet</span>::<span class="f">vector_register_count</span>());   <span class="c">// from -march</span>
+<span class="ln"></span>    <span class="k">return</span> <span class="t">std</span>::<span class="f">max</span>(registers, <span class="n">4</span>);
+<span class="ln"></span>}</div></div><div class="notes"><p class="lede" style="margin-top:0"><code>poet::vector_register_count()</code> reads <code>-march</code> at compile time.</p><ul class="cost "><li><code>consteval</code> in C++20, <code>constexpr</code> in C++17: the same call compiles in both.</li><li><b>The compiler folds <code>choose_unroll()</code></b>, and the dispatch with it.</li><li><b>This is the only place the machine is mentioned.</b></li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>35</b> / 44</p></section>
+<section class="slide" aria-label="slide 36"><div class="slide-content"><p class="kicker reveal">poet &plus; xsimd &middot; C++17</p><h2 class="reveal">Select the kernel, <em>keep the standard</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">sum_xsimd_best.cpp</span><span class="term-flags">g++ -std=c++17 -O3 -march=native</span></div><div class="term-body "><span class="ln"></span><span class="k">auto</span> <span class="f">sum_xsimd_best</span>(<span class="k">const</span> <span class="k">float</span> *a, <span class="k">int</span> n) -&gt; <span class="k">float</span> {
+<span class="ln"></span>    <span class="k">return</span> <span class="t">poet</span>::<span class="f">dispatch</span>(<span class="t">poet</span>::throw_on_no_match,
+<span class="ln"></span>        [=](<span class="k">auto</span> tag) { <span class="k">return</span> <span class="f">sum_xsimd</span>&lt;tag&gt;(a, n); },
+<span class="ln"></span>        <span class="t">poet</span>::<span class="f">dispatch_param</span>&lt;unrolls&gt;{<span class="f">choose_unroll</span>()});
+<span class="ln"></span>}</div><div class="term-out"><span class="p">$ ./bench</span><span class="g">230.8 GB/s</span><span class="x">24.1x</span><span class="note">the machine picks UNROLL</span></div></div><div class="notes wide"><p class="lede" style="margin-top:0">One call selects the unroll factor.</p><ul class="cost "><li><code>poet::dispatch_param&lt;unrolls&gt;</code> lists the values the ladder covers.</li><li><code>choose_unroll()</code> is a run-time value. <code>dispatch</code> matches it against that list.</li><li><b>The kernel underneath never changes.</b></li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>36</b> / 44</p></section>
+<section class="slide" aria-label="slide 37"><div class="slide-content"><p class="kicker reveal">Scoreboard</p><h2 class="reveal">Two standards apart, <em>same numbers</em></h2><div class="body stack reveal"><table class="score solo"><tr><th class="name">implementation</th><th class="grp">GB/s</th><th></th><th class="grp">vs plain</th></tr><tr class="dim"><td class="name">plain loop</td><td class="val">9.6</td><td class="bar l"><span class="bg"><span class="fill" style="width:3.7%"></span></span></td><td class="x">1.0x</td></tr><tr class="dim"><td class="name">05 inline asm, 16 ymm</td><td class="val">248.2</td><td class="bar l"><span class="bg"><span class="fill" style="width:95.5%"></span></span></td><td class="x">25.9x</td></tr><tr class="hi"><td class="name">C++17 poet &plus; xsimd</td><td class="val">230.8</td><td class="bar l"><span class="bg"><span class="fill" style="width:88.8%"></span></span></td><td class="x">24.1x</td></tr><tr class="hi"><td class="name">C++26 std::simd &plus; template for</td><td class="val">235.7</td><td class="bar l"><span class="bg"><span class="fill" style="width:90.7%"></span></span></td><td class="x">24.6x</td></tr></table><div class="score-legend"><span><b>Core Ultra 7 155H</b> &middot; Meteor Lake, AVX2</span><span>n = 8192 floats, L1-resident &middot; min of 20000 &times; best of 3</span></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>37</b> / 44</p></section>
+<!-- SPEAKER NOTE: The monsters are plain, the standard C++ rows are amber. choose_unroll() picks 16 on the laptop and 32 on the Xeon, so the auto row is the unroll-32 measurement there and beats the hand-written dispatch<16>. -->
+<section class="slide" aria-label="slide 38"><div class="slide-content"><p class="kicker reveal">Results</p><h2 class="reveal">Every implementation, <em>different machines</em></h2><div class="body stack reveal"><table class="score"><tr><th class="name">implementation</th><th colspan="3" class="grp">Core Ultra 7 155H</th><th colspan="3" class="grp">Xeon w5-3435X</th></tr><tr class="dim"><td class="name">plain loop</td><td class="val">9.6</td><td class="bar l"><span class="bg"><span class="fill" style="width:2.4%"></span></span></td><td class="x">1.0x</td><td class="val">9.0</td><td class="bar w"><span class="bg"><span class="fill" style="width:2.2%"></span></span></td><td class="x">1.0x</td></tr><tr><td class="name">std::reduce</td><td class="val">33.8</td><td class="bar l"><span class="bg"><span class="fill" style="width:8.4%"></span></span></td><td class="x">3.5x</td><td class="val">31.6</td><td class="bar w"><span class="bg"><span class="fill" style="width:7.9%"></span></span></td><td class="x">3.5x</td></tr><tr><td class="name">01 &nbsp;hand unrolled &times;4</td><td class="val">38.0</td><td class="bar l"><span class="bg"><span class="fill" style="width:9.5%"></span></span></td><td class="x">4.0x</td><td class="val">35.7</td><td class="bar w"><span class="bg"><span class="fill" style="width:8.9%"></span></span></td><td class="x">4.0x</td></tr><tr><td class="name">02 &nbsp;macro unrolled &times;4</td><td class="val">38.0</td><td class="bar l"><span class="bg"><span class="fill" style="width:9.5%"></span></span></td><td class="x">4.0x</td><td class="val">35.7</td><td class="bar w"><span class="bg"><span class="fill" style="width:8.9%"></span></span></td><td class="x">4.0x</td></tr><tr class="dim"><td class="name">03a #pragma GCC unroll 4</td><td class="val">9.6</td><td class="bar l"><span class="bg"><span class="fill" style="width:2.4%"></span></span></td><td class="x">1.0x</td><td class="val">9.0</td><td class="bar w"><span class="bg"><span class="fill" style="width:2.2%"></span></span></td><td class="x">1.0x</td></tr><tr><td class="name">03b #pragma omp simd reduction</td><td class="val">74.8</td><td class="bar l"><span class="bg"><span class="fill" style="width:18.7%"></span></span></td><td class="x">7.8x</td><td class="val">70.0</td><td class="bar w"><span class="bg"><span class="fill" style="width:17.5%"></span></span></td><td class="x">7.8x</td></tr><tr><td class="name">04 &nbsp;dispatch&lt;16&gt;</td><td class="val">138.8</td><td class="bar l"><span class="bg"><span class="fill" style="width:34.7%"></span></span></td><td class="x">14.5x</td><td class="val">133.7</td><td class="bar w"><span class="bg"><span class="fill" style="width:33.4%"></span></span></td><td class="x">14.9x</td></tr><tr><td class="name">05 &nbsp;inline asm, 16 ymm</td><td class="val">248.2</td><td class="bar l"><span class="bg"><span class="fill" style="width:62.0%"></span></span></td><td class="x">25.9x</td><td class="val">252.1</td><td class="bar w"><span class="bg"><span class="fill" style="width:63.0%"></span></span></td><td class="x">28.1x</td></tr><tr><td class="name">&plus; &nbsp;built-in vectors</td><td class="val">240.9</td><td class="bar l"><span class="bg"><span class="fill" style="width:60.2%"></span></span></td><td class="x">25.1x</td><td class="val">246.4</td><td class="bar w"><span class="bg"><span class="fill" style="width:61.6%"></span></span></td><td class="x">27.4x</td></tr><tr class="hi"><td class="name">C++17 static_for, auto unroll</td><td class="val">135.4</td><td class="bar l"><span class="bg"><span class="fill" style="width:33.9%"></span></span></td><td class="x">14.1x</td><td class="val">210.1</td><td class="bar w"><span class="bg"><span class="fill" style="width:52.5%"></span></span></td><td class="x">23.4x</td></tr><tr class="hi"><td class="name">C++17 poet &plus; xsimd</td><td class="val">230.8</td><td class="bar l"><span class="bg"><span class="fill" style="width:57.7%"></span></span></td><td class="x">24.1x</td><td class="val">372.4</td><td class="bar w"><span class="bg"><span class="fill" style="width:93.1%"></span></span></td><td class="x">41.4x</td></tr><tr class="hi"><td class="name">C++26 std::simd &plus; dispatch</td><td class="val">235.7</td><td class="bar l"><span class="bg"><span class="fill" style="width:58.9%"></span></span></td><td class="x">24.6x</td><td class="val">352.3</td><td class="bar w"><span class="bg"><span class="fill" style="width:88.1%"></span></span></td><td class="x">39.2x</td></tr></table><div class="score-legend"><span><i style="background:linear-gradient(90deg,#FFBB33,#FF9E33)"></i><b>laptop</b> &middot; Meteor Lake, AVX2</span><span><i style="background:linear-gradient(90deg,#FF8933,#E0662A)"></i><b>workstation</b> &middot; Sapphire Rapids, AVX-512</span><span>same scale on both, 0 to 400 GB/s</span><span>n = 8192 floats, L1-resident &middot; min of 20000 &times; best of 3</span></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>38</b> / 44</p></section>
+<section class="slide" aria-label="slide 39"><div class="slide-content"><p class="kicker reveal">Conclusion</p><h2 class="reveal">Where the <em>journey</em> ends</h2><div class="body reveal"><ol class="ranked"><li><h3>The monsters are replaceable</h3><p>Macros, pragmas and inline asm all have a standard C++ answer</p></li><li><h3>No need to wait for C++26</h3><p>With abstraction, C++17 reaches the same throughput</p></li><li><h3>Performance without the bill</h3><p>One kernel body, one list of factors, no ISA in the source</p></li><li><h3>The compilers keep improving</h3><p>New architectures come for free. The asm block does not</p></li></ol></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>39</b> / 44</p></section>
+<!-- SPEAKER NOTE: The playground is where the six monsters actually lived. -->
+<section class="slide" aria-label="slide 40"><div class="slide-content"><p class="kicker reveal">Backup &middot; how far we can take it</p><h2 class="reveal">admiral: <em>my FFT library</em></h2><div class="body reveal"><ul class="cost full"><li>It was not supposed to be a library. It was supposed to be a playground for testing optimizations.</li><li><b>Why FFT?</b> Because there are fast implementations.</li><li>It started as a collection of kernels (asm, C, C++) that I used to learn optimizations and HPC over the last 10+ years.</li></ul></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>40</b> / 44</p></section>
+<!-- SPEAKER NOTE: Every constraint in the prompt is one of the monsters, spelled as a ban. -->
+<section class="slide" aria-label="slide 41"><div class="slide-content"><p class="kicker reveal">Backup &middot; AI</p><h2 class="reveal">I asked an LLM for <em>exactly this</em></h2><div class="body reveal"><div class="term "><div class="term-bar"><i></i><i></i><i></i><span class="term-name">prompt.txt</span></div><div class="term-body sm">\goal convert this codebase into a fully fledged FFT library:
+1. Write an API to use the FFT (discussed over a while).
+2. Use the current code as a baseline and do not regress performance.
+3. Write C++17 code with clear algorithms (Bluestein, Good-Thomas), no
+   inline asm, no manual unrolling, no size-specific kernels, size as a
+   template parameter, and a cost model that decomposes the FFT into the
+   right kernels.
+4. Replace all the inline asm,c intrinsics with c++17 once superseded delete
+   the old code
+5. Avoid macros, use if constexpr and stdlib, fold expressions and so
+   on,POET and XSIMD (learn the API) for unrolling, simd, and so on.
+6. Test against the Naive N^2 algorithm already presend (use the relative L2
+   norm). Reporpose the existing tests.
+7. Repurpose the exsitsing benchmarks to test the new code.</div></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>41</b> / 44</p></section>
+<!-- SPEAKER NOTE: Scroll the listing: the wheel stays inside the box until the end, then it turns the slide. Radix and vector type are template parameters, poet::static_for writes every body. The macros are the portability shims of macros.hpp: ADM_ALWAYS_INLINE and friends, 21 expansions, no arithmetic in any of them. -->
+<section class="slide" aria-label="slide 42"><div class="slide-content"><p class="kicker reveal">Backup &middot; result</p><h2 class="reveal">One kernel, <em>every radix</em></h2><div class="body reveal"><div class="term"><div class="term-bar"><i></i><i></i><i></i><span class="term-name">admiral/detail/butterfly.hpp</span><span class="term-flags">g++ -std=c++17 -O3 -march=native</span></div><div class="term-body xs scroller"><span class="ln"></span><span class="p">#pragma once</span>
+<span class="ln"></span>
+<span class="ln"></span><span class="c">// Cooley-Tukey decimation in frequency: Gentleman and Sande, AFIPS Fall Joint Comp. Conf. 1966.</span>
+<span class="ln"></span><span class="c">// Odd radices use Singleton&#x27;s sum/difference DFT, IEEE Trans. Audio Electroacoust. 17 (1969) 93.</span>
+<span class="ln"></span>
+<span class="ln"></span><span class="p">#include &lt;cstddef&gt;</span>
+<span class="ln"></span><span class="p">#include &lt;type_traits&gt;</span>
+<span class="ln"></span><span class="p">#include &lt;utility&gt;</span>
+<span class="ln"></span>
+<span class="ln"></span><span class="p">#include &lt;poet/poet.hpp&gt;</span>
+<span class="ln"></span><span class="p">#include &quot;cxx_compat.hpp&quot;</span>
+<span class="ln"></span>
+<span class="ln"></span><span class="p">#include &quot;ct_math.hpp&quot;</span>
+<span class="ln"></span>
+<span class="ln"></span><span class="p">#include &quot;macros.hpp&quot;</span>
+<span class="ln"></span>
+<span class="ln"></span><span class="k">namespace</span> admiral {
+<span class="ln"></span><span class="k">namespace</span> detail {
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t IP, <span class="k">typename</span> V, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">radix_sym_dft</span>(<span class="k">const</span> V (&amp;xr)[IP],
+<span class="ln"></span>                                     <span class="k">const</span> V (&amp;xi)[IP],
+<span class="ln"></span>                                     Emit&amp;&amp; emit) {
+<span class="ln"></span>    <span class="k">static_assert</span>(IP % <span class="n">2</span> == <span class="n">1</span> &amp;&amp; IP &gt;= <span class="n">3</span>, <span class="s">&quot;symmetric DFT is for odd radix &gt;= 3&quot;</span>);
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t H = (IP - <span class="n">1</span>) / <span class="n">2</span>;
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t HA = H + <span class="n">1</span>;
+<span class="ln"></span>    V ar[HA], ai[HA], dr[HA], di[HA];
+<span class="ln"></span>    <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">1</span>, H + <span class="n">1</span>&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> m) {
+<span class="ln"></span>        <span class="k">constexpr</span> <span class="t">std</span>::size_t mc = IP - m;
+<span class="ln"></span>        ar[m] = xr[m] + xr[mc];
+<span class="ln"></span>        ai[m] = xi[m] + xi[mc];
+<span class="ln"></span>        dr[m] = xr[m] - xr[mc];
+<span class="ln"></span>        di[m] = xi[m] - xi[mc];
+<span class="ln"></span>    });
+<span class="ln"></span>    {
+<span class="ln"></span>        V sr = xr[<span class="n">0</span>], si = xi[<span class="n">0</span>];
+<span class="ln"></span>        <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">1</span>, H + <span class="n">1</span>&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> m) {
+<span class="ln"></span>            sr = sr + ar[m];
+<span class="ln"></span>            si = si + ai[m];
+<span class="ln"></span>        });
+<span class="ln"></span>        <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, <span class="n">0</span>&gt;{}, sr, si);
+<span class="ln"></span>    }
+<span class="ln"></span>    <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">1</span>, H + <span class="n">1</span>&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> k) {
+<span class="ln"></span>        V PR = xr[<span class="n">0</span>], PI = xi[<span class="n">0</span>], QR = <span class="f">V</span>(<span class="f">T</span>(<span class="n">0</span>)), QI = <span class="f">V</span>(<span class="f">T</span>(<span class="n">0</span>));
+<span class="ln"></span>        <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">1</span>, H + <span class="n">1</span>&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> m) {
+<span class="ln"></span>            <span class="k">constexpr</span> <span class="k">auto</span> w =
+<span class="ln"></span>                <span class="f">ct_sincos_turns</span>&lt;<span class="f">ct_real_t</span>&lt;T&gt;&gt;(
+<span class="ln"></span>                    <span class="k">false</span>, (m * <span class="t">std</span>::<span class="f">decay_t</span>&lt;<span class="k">decltype</span>(k)&gt;::value) % IP, IP);
+<span class="ln"></span>            PR = PR + <span class="f">V</span>(<span class="k">static_cast</span>&lt;T&gt;(w.c)) * ar[m];
+<span class="ln"></span>            PI = PI + <span class="f">V</span>(<span class="k">static_cast</span>&lt;T&gt;(w.c)) * ai[m];
+<span class="ln"></span>            QR = QR + <span class="f">V</span>(<span class="k">static_cast</span>&lt;T&gt;(w.s)) * di[m];
+<span class="ln"></span>            QI = QI + <span class="f">V</span>(<span class="k">static_cast</span>&lt;T&gt;(w.s)) * dr[m];
+<span class="ln"></span>        });
+<span class="ln"></span>        <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, k&gt;{}, PR + QR, PI - QI);
+<span class="ln"></span>        <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, IP - k&gt;{}, PR - QR, PI + QI);
+<span class="ln"></span>    });
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="t">std</span>::size_t N1, <span class="t">std</span>::size_t N2, <span class="t">std</span>::size_t K1, <span class="t">std</span>::size_t K2&gt;
+<span class="ln"></span><span class="k">inline</span> <span class="k">constexpr</span> <span class="t">std</span>::size_t crt_index = [] {
+<span class="ln"></span>    <span class="k">for</span> (<span class="t">std</span>::size_t k = <span class="n">0</span>; k &lt; N1 * N2; ++k)
+<span class="ln"></span>        <span class="k">if</span> (k % N1 == K1 &amp;&amp; k % N2 == K2) <span class="k">return</span> k;
+<span class="ln"></span>    <span class="k">return</span> N1 * N2;
+<span class="ln"></span>}();
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t IP, <span class="k">typename</span> V, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">pow2_dif_butterfly</span>(<span class="k">const</span> V (&amp;xr)[IP], <span class="k">const</span> V (&amp;xi)[IP], Emit&amp;&amp; emit);
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t N, <span class="k">typename</span> V, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">sub_dft</span>(<span class="k">const</span> V (&amp;xr)[N], <span class="k">const</span> V (&amp;xi)[N], Emit&amp;&amp; emit) {
+<span class="ln"></span>    <span class="k">if</span> <span class="k">constexpr</span> (<span class="t">detail</span>::<span class="f">has_single_bit</span>(N))
+<span class="ln"></span>        <span class="f">pow2_dif_butterfly</span>&lt;T, N, V&gt;(xr, xi, <span class="t">std</span>::<span class="f">forward</span>&lt;Emit&gt;(emit));
+<span class="ln"></span>    <span class="k">else</span>
+<span class="ln"></span>        <span class="f">radix_sym_dft</span>&lt;T, N&gt;(xr, xi, <span class="t">std</span>::<span class="f">forward</span>&lt;Emit&gt;(emit));
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t N1, <span class="t">std</span>::size_t N2, <span class="k">typename</span> V, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">pfa_dif_butterfly</span>(<span class="k">const</span> V (&amp;tr)[N1 * N2],
+<span class="ln"></span>                                         <span class="k">const</span> V (&amp;ti)[N1 * N2],
+<span class="ln"></span>                                         Emit&amp;&amp; emit) {
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t IP = N1 * N2;
+<span class="ln"></span>    <span class="k">static_assert</span>(<span class="t">std</span>::<span class="f">gcd</span>(N1, N2) == <span class="n">1</span>, <span class="s">&quot;PFA requires coprime factors&quot;</span>);
+<span class="ln"></span>
+<span class="ln"></span>    V ar[N1][N2], ai[N1][N2];
+<span class="ln"></span>    <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, N2&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> n2) {
+<span class="ln"></span>        V br[N1], bi[N1];
+<span class="ln"></span>        <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, N1&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> n1) {
+<span class="ln"></span>            <span class="k">constexpr</span> <span class="t">std</span>::size_t src = (n1 * N2 + <span class="t">std</span>::<span class="f">decay_t</span>&lt;<span class="k">decltype</span>(n2)&gt;::value * N1) % IP;
+<span class="ln"></span>            br[n1] = tr[src];
+<span class="ln"></span>            bi[n1] = ti[src];
+<span class="ln"></span>        });
+<span class="ln"></span>        <span class="f">sub_dft</span>&lt;T, N1&gt;(br, bi, [&amp;](<span class="k">auto</span> K1, V yr, V yi) {
+<span class="ln"></span>            ar[K1][n2] = yr;
+<span class="ln"></span>            ai[K1][n2] = yi;
+<span class="ln"></span>        });
+<span class="ln"></span>    });
+<span class="ln"></span>
+<span class="ln"></span>    <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, N1&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> k1) {
+<span class="ln"></span>        <span class="f">sub_dft</span>&lt;T, N2&gt;(ar[k1], ai[k1], [&amp;](<span class="k">const</span> <span class="k">auto</span> k2, V yr, V yi) {
+<span class="ln"></span>            <span class="k">constexpr</span> <span class="k">auto</span> out = <span class="f">crt_index</span>&lt;N1, N2, k1, k2&gt;;
+<span class="ln"></span>            <span class="k">static_assert</span>(out &lt; IP, <span class="s">&quot;CRT index must exist for coprime N1,N2&quot;</span>);
+<span class="ln"></span>            <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, out&gt;{}, yr, yi);
+<span class="ln"></span>        });
+<span class="ln"></span>    });
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span>[[nodiscard]] <span class="k">constexpr</span> <span class="t">std</span>::size_t <span class="f">sym_dft_ops</span>(<span class="t">std</span>::size_t n) <span class="k">noexcept</span> {
+<span class="ln"></span>    <span class="k">const</span> <span class="t">std</span>::size_t h = (n - <span class="n">1</span>) / <span class="n">2</span>;
+<span class="ln"></span>    <span class="k">return</span> <span class="n">4</span> * h * h + <span class="n">10</span> * h;
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span>[[nodiscard]] <span class="k">constexpr</span> <span class="t">std</span>::size_t <span class="f">ct_dft_ops</span>(<span class="t">std</span>::size_t n1, <span class="t">std</span>::size_t n2) <span class="k">noexcept</span> {
+<span class="ln"></span>    <span class="k">return</span> n2 * <span class="f">sym_dft_ops</span>(n1) + n1 * <span class="f">sym_dft_ops</span>(n2) + <span class="n">6</span> * (n1 - <span class="n">1</span>) * (n2 - <span class="n">1</span>);
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span>[[nodiscard]] <span class="k">constexpr</span> <span class="t">std</span>::<span class="f">pair</span>&lt;<span class="t">std</span>::size_t, <span class="t">std</span>::size_t&gt; <span class="f">odd_ct_split</span>(<span class="t">std</span>::size_t n) <span class="k">noexcept</span> {
+<span class="ln"></span>    <span class="k">if</span> (n % <span class="n">2</span> == <span class="n">0</span> || <span class="f">coprime_split</span>(n).first != <span class="n">0</span>) <span class="k">return</span> {<span class="n">0</span>, <span class="n">0</span>};
+<span class="ln"></span>    <span class="k">for</span> (<span class="t">std</span>::size_t p = <span class="n">3</span>; p * p &lt;= n; p += <span class="n">2</span>)
+<span class="ln"></span>        <span class="k">if</span> (n % p == <span class="n">0</span> &amp;&amp; <span class="f">ct_dft_ops</span>(p, n / p) &lt; <span class="f">sym_dft_ops</span>(n)) <span class="k">return</span> {p, n / p};
+<span class="ln"></span>    <span class="k">return</span> {<span class="n">0</span>, <span class="n">0</span>};
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t IP, <span class="t">std</span>::size_t N, <span class="k">typename</span> V&gt;
+<span class="ln"></span>[[nodiscard]] ADM_ALWAYS_INLINE <span class="t">std</span>::<span class="f">pair</span>&lt;V, V&gt; <span class="f">apply_stage_twiddle</span>(V fr, V fi) {
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="k">auto</span> w = <span class="f">ct_sincos_turns</span>&lt;<span class="f">ct_real_t</span>&lt;T&gt;&gt;(<span class="k">true</span>, N, IP);
+<span class="ln"></span>    <span class="k">if</span> <span class="k">constexpr</span> (w.s == <span class="n">0</span> &amp;&amp; w.c == <span class="n">1</span>) {
+<span class="ln"></span>        <span class="k">return</span> {fr, fi};
+<span class="ln"></span>    } <span class="k">else</span> <span class="k">if</span> <span class="k">constexpr</span> (w.s == <span class="n">0</span> &amp;&amp; w.c == -<span class="n">1</span>) {
+<span class="ln"></span>        <span class="k">return</span> {-fr, -fi};
+<span class="ln"></span>    } <span class="k">else</span> <span class="k">if</span> <span class="k">constexpr</span> (w.c == <span class="n">0</span> &amp;&amp; w.s == -<span class="n">1</span>) {
+<span class="ln"></span>        <span class="k">return</span> {fi, -fr};
+<span class="ln"></span>    } <span class="k">else</span> <span class="k">if</span> <span class="k">constexpr</span> (w.c == <span class="n">0</span> &amp;&amp; w.s == <span class="n">1</span>) {
+<span class="ln"></span>        <span class="k">return</span> {-fi, fr};
+<span class="ln"></span>    } <span class="k">else</span> <span class="k">if</span> <span class="k">constexpr</span> (w.c == w.s) {
+<span class="ln"></span>        <span class="k">const</span> V <span class="f">c</span>(<span class="k">static_cast</span>&lt;T&gt;(w.c));
+<span class="ln"></span>        <span class="k">return</span> {c * (fr - fi), c * (fi + fr)};
+<span class="ln"></span>    } <span class="k">else</span> <span class="k">if</span> <span class="k">constexpr</span> (w.c == -w.s) {
+<span class="ln"></span>        <span class="k">const</span> V <span class="f">c</span>(<span class="k">static_cast</span>&lt;T&gt;(w.c));
+<span class="ln"></span>        <span class="k">return</span> {c * (fr + fi), c * (fi - fr)};
+<span class="ln"></span>    } <span class="k">else</span> {
+<span class="ln"></span>        <span class="k">const</span> V <span class="f">c</span>(<span class="k">static_cast</span>&lt;T&gt;(w.c)), <span class="f">s</span>(<span class="k">static_cast</span>&lt;T&gt;(w.s));
+<span class="ln"></span>        <span class="k">return</span> {c * fr - s * fi, c * fi + s * fr};
+<span class="ln"></span>    }
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t IP, <span class="k">typename</span> V, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">pow2_dif_butterfly</span>(<span class="k">const</span> V (&amp;xr)[IP],
+<span class="ln"></span>                                          <span class="k">const</span> V (&amp;xi)[IP],
+<span class="ln"></span>                                          Emit&amp;&amp; emit) {
+<span class="ln"></span>    <span class="k">static_assert</span>(IP &gt;= <span class="n">2</span> &amp;&amp; <span class="t">detail</span>::<span class="f">has_single_bit</span>(IP), <span class="s">&quot;pow2_dif_butterfly: IP must be a power of two &gt;= 2&quot;</span>);
+<span class="ln"></span>    <span class="k">if</span> <span class="k">constexpr</span> (IP == <span class="n">2</span>) {
+<span class="ln"></span>        <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, <span class="n">0</span>&gt;{}, xr[<span class="n">0</span>] + xr[<span class="n">1</span>], xi[<span class="n">0</span>] + xi[<span class="n">1</span>]);
+<span class="ln"></span>        <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, <span class="n">1</span>&gt;{}, xr[<span class="n">0</span>] - xr[<span class="n">1</span>], xi[<span class="n">0</span>] - xi[<span class="n">1</span>]);
+<span class="ln"></span>    } <span class="k">else</span> {
+<span class="ln"></span>        <span class="k">constexpr</span> <span class="t">std</span>::size_t H = IP / <span class="n">2</span>;
+<span class="ln"></span>        {
+<span class="ln"></span>            V er[H], ei[H];
+<span class="ln"></span>            <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, H&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> n) {
+<span class="ln"></span>                er[n] = xr[n] + xr[n + H];
+<span class="ln"></span>                ei[n] = xi[n] + xi[n + H];
+<span class="ln"></span>            });
+<span class="ln"></span>            <span class="f">pow2_dif_butterfly</span>&lt;T, H, V&gt;(er, ei, [&amp;](<span class="k">auto</span> Kc, V yr, V yi) {
+<span class="ln"></span>                <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, <span class="n">2</span> * Kc&gt;{}, yr, yi);
+<span class="ln"></span>            });
+<span class="ln"></span>        }
+<span class="ln"></span>        {
+<span class="ln"></span>            V fr[H], fi[H];
+<span class="ln"></span>            <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, H&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> n) {
+<span class="ln"></span>                <span class="k">auto</span> [tr, ti] = <span class="f">apply_stage_twiddle</span>&lt;T, IP, n, V&gt;(
+<span class="ln"></span>                    xr[n] - xr[n + H], xi[n] - xi[n + H]);
+<span class="ln"></span>                fr[n] = tr;
+<span class="ln"></span>                fi[n] = ti;
+<span class="ln"></span>            });
+<span class="ln"></span>            <span class="f">pow2_dif_butterfly</span>&lt;T, H, V&gt;(fr, fi, [&amp;](<span class="k">auto</span> Kc, V yr, V yi) {
+<span class="ln"></span>                <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, <span class="n">2</span> * Kc + <span class="n">1</span>&gt;{}, yr, yi);
+<span class="ln"></span>            });
+<span class="ln"></span>        }
+<span class="ln"></span>    }
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t N1, <span class="t">std</span>::size_t N2, <span class="k">typename</span> V, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">ct_dif_butterfly</span>(<span class="k">const</span> V (&amp;tr)[N1 * N2],
+<span class="ln"></span>                                        <span class="k">const</span> V (&amp;ti)[N1 * N2],
+<span class="ln"></span>                                        Emit&amp;&amp; emit) {
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t IP = N1 * N2;
+<span class="ln"></span>    <span class="k">static_assert</span>(N1 % <span class="n">2</span> == <span class="n">1</span> &amp;&amp; N2 % <span class="n">2</span> == <span class="n">1</span> &amp;&amp; N1 &gt;= <span class="n">3</span> &amp;&amp; N2 &gt;= <span class="n">3</span>,
+<span class="ln"></span>                  <span class="s">&quot;ct_dif_butterfly: both factors must be odd radices &gt;= 3&quot;</span>);
+<span class="ln"></span>
+<span class="ln"></span>    V ar[N1][N2], ai[N1][N2];
+<span class="ln"></span>    <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, N2&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> n2) {
+<span class="ln"></span>        V br[N1], bi[N1];
+<span class="ln"></span>        <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, N1&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> n1) {
+<span class="ln"></span>            br[n1] = tr[n1 * N2 + n2];
+<span class="ln"></span>            bi[n1] = ti[n1 * N2 + n2];
+<span class="ln"></span>        });
+<span class="ln"></span>        <span class="f">radix_sym_dft</span>&lt;T, N1&gt;(br, bi, [&amp;](<span class="k">const</span> <span class="k">auto</span> r, V yr, V yi) {
+<span class="ln"></span>            <span class="k">const</span> <span class="k">auto</span> [fr, fi] = <span class="f">apply_stage_twiddle</span>&lt;T, IP, r * n2, V&gt;(yr, yi);
+<span class="ln"></span>            ar[r][n2] = fr;
+<span class="ln"></span>            ai[r][n2] = fi;
+<span class="ln"></span>        });
+<span class="ln"></span>    });
+<span class="ln"></span>
+<span class="ln"></span>    <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, N1&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> r) {
+<span class="ln"></span>        <span class="f">radix_sym_dft</span>&lt;T, N2&gt;(ar[r], ai[r], [&amp;](<span class="k">const</span> <span class="k">auto</span> k2, V yr, V yi) {
+<span class="ln"></span>            <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, k2 * N1 + r&gt;{}, yr, yi);
+<span class="ln"></span>        });
+<span class="ln"></span>    });
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="t">std</span>::size_t IP&gt;
+<span class="ln"></span><span class="k">inline</span> <span class="k">constexpr</span> <span class="k">bool</span> dif_butterfly_wants_reload =
+<span class="ln"></span>    <span class="f">butterfly_wants_reload</span>(IP, <span class="t">poet</span>::<span class="f">vector_register_count</span>());
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t IP, <span class="k">typename</span> V, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">dif_butterfly</span>(<span class="k">const</span> V (&amp;tr)[IP],
+<span class="ln"></span>                                     <span class="k">const</span> V (&amp;ti)[IP],
+<span class="ln"></span>                                     Emit&amp;&amp; emit) {
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="k">auto</span> ct = <span class="f">odd_ct_split</span>(IP);
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="k">auto</span> pf = <span class="f">coprime_split</span>(IP);
+<span class="ln"></span>    <span class="k">if</span> <span class="k">constexpr</span> (ct.first != <span class="n">0</span>) {
+<span class="ln"></span>        <span class="f">ct_dif_butterfly</span>&lt;T, ct.first, ct.second&gt;(tr, ti, <span class="t">std</span>::<span class="f">forward</span>&lt;Emit&gt;(emit));
+<span class="ln"></span>    } <span class="k">else</span> <span class="k">if</span> <span class="k">constexpr</span> (IP % <span class="n">2</span> == <span class="n">1</span> &amp;&amp; IP &gt;= <span class="n">3</span>) {
+<span class="ln"></span>        <span class="f">radix_sym_dft</span>&lt;T, IP&gt;(tr, ti, <span class="t">std</span>::<span class="f">forward</span>&lt;Emit&gt;(emit));
+<span class="ln"></span>    } <span class="k">else</span> <span class="k">if</span> <span class="k">constexpr</span> (IP % <span class="n">2</span> == <span class="n">0</span> &amp;&amp; pf.first != <span class="n">0</span>) {
+<span class="ln"></span>        <span class="f">pfa_dif_butterfly</span>&lt;T, pf.first, pf.second&gt;(tr, ti, <span class="t">std</span>::<span class="f">forward</span>&lt;Emit&gt;(emit));
+<span class="ln"></span>    } <span class="k">else</span> <span class="k">if</span> <span class="k">constexpr</span> (IP &gt;= <span class="n">4</span> &amp;&amp; <span class="t">detail</span>::<span class="f">has_single_bit</span>(IP)) {
+<span class="ln"></span>        <span class="f">pow2_dif_butterfly</span>&lt;T, IP&gt;(tr, ti, <span class="t">std</span>::<span class="f">forward</span>&lt;Emit&gt;(emit));
+<span class="ln"></span>    } <span class="k">else</span> {
+<span class="ln"></span>        <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, IP&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> k) {
+<span class="ln"></span>            V sr = tr[<span class="n">0</span>], si = ti[<span class="n">0</span>];
+<span class="ln"></span>            <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">1</span>, IP&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> jj) {
+<span class="ln"></span>                <span class="k">constexpr</span> <span class="k">auto</span> w = <span class="f">ct_sincos_turns</span>&lt;<span class="f">ct_real_t</span>&lt;T&gt;&gt;(
+<span class="ln"></span>                    <span class="k">true</span>, jj * <span class="t">std</span>::<span class="f">decay_t</span>&lt;<span class="k">decltype</span>(k)&gt;::value, IP);
+<span class="ln"></span>                sr = sr + <span class="f">V</span>(<span class="k">static_cast</span>&lt;T&gt;(w.c)) * tr[jj]
+<span class="ln"></span>                        - <span class="f">V</span>(<span class="k">static_cast</span>&lt;T&gt;(w.s)) * ti[jj];
+<span class="ln"></span>                si = si + <span class="f">V</span>(<span class="k">static_cast</span>&lt;T&gt;(w.c)) * ti[jj]
+<span class="ln"></span>                        + <span class="f">V</span>(<span class="k">static_cast</span>&lt;T&gt;(w.s)) * tr[jj];
+<span class="ln"></span>            });
+<span class="ln"></span>            <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, k&gt;{}, sr, si);
+<span class="ln"></span>        });
+<span class="ln"></span>    }
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t IP, <span class="k">typename</span> V, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">dif_butterfly_terminal</span>(<span class="k">const</span> V (&amp;tr)[IP],
+<span class="ln"></span>                                              <span class="k">const</span> V (&amp;ti)[IP],
+<span class="ln"></span>                                              Emit&amp;&amp; emit) {
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="k">auto</span> split = <span class="f">coprime_split</span>(IP);
+<span class="ln"></span>    <span class="k">if</span> <span class="k">constexpr</span> (IP % <span class="n">2</span> == <span class="n">1</span> &amp;&amp; split.first != <span class="n">0</span>) {
+<span class="ln"></span>        <span class="f">pfa_dif_butterfly</span>&lt;T, split.first, split.second&gt;(tr, ti,
+<span class="ln"></span>                                                                 <span class="t">std</span>::<span class="f">forward</span>&lt;Emit&gt;(emit));
+<span class="ln"></span>    } <span class="k">else</span> {
+<span class="ln"></span>        <span class="f">dif_butterfly</span>&lt;T, IP&gt;(tr, ti, <span class="t">std</span>::<span class="f">forward</span>&lt;Emit&gt;(emit));
+<span class="ln"></span>    }
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="c">// Sweep knobs, not shipped API: ADM_FIX2_N2 forces the outer split factor, ADM_FIX2_L3</span>
+<span class="ln"></span><span class="c">// splits stage B again when it is wide enough to pay for a second scratch.</span>
+<span class="ln"></span><span class="p">#ifndef ADM_FIX2_N2</span>
+<span class="ln"></span><span class="p">#define ADM_FIX2_N2 0</span>
+<span class="ln"></span><span class="p">#endif</span>
+<span class="ln"></span><span class="p">#ifndef ADM_FIX2_L3</span>
+<span class="ln"></span><span class="p">#define ADM_FIX2_L3 0</span>
+<span class="ln"></span><span class="p">#endif</span>
+<span class="ln"></span>
+<span class="ln"></span><span class="c">// Gentleman-Sande outer split of one pow2 radix, IP = N1 * N2, staged through an L1 scratch.</span>
+<span class="ln"></span><span class="c">// The monolithic radix keeps 2*IP vector registers live, so the whole set spills at IP &gt;= 16.</span>
+<span class="ln"></span><span class="c">// Stage A runs N2 radix-N1 butterflies over j = n + N2*m and writes a[r][n] = A_r(n)*w_IP^(n*r);</span>
+<span class="ln"></span><span class="c">// stage B reads one r row back and runs a radix-N2 butterfly, emitting k = r + N1*k2.</span>
+<span class="ln"></span><span class="c">// Peak live is 2*N2 + O(1) registers, and the scratch is IP*W elements per plane.</span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="t">std</span>::size_t IP&gt;
+<span class="ln"></span>[[nodiscard]] ADM_CONSTEVAL <span class="t">std</span>::size_t <span class="f">staged_dif_n2</span>() {
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t forced = ADM_FIX2_N2 &gt; <span class="n">1u</span> ? <span class="t">std</span>::<span class="f">size_t</span>(ADM_FIX2_N2) : IP;
+<span class="ln"></span>    <span class="k">if</span> (forced &lt; IP &amp;&amp; IP % forced == <span class="n">0u</span>) <span class="k">return</span> forced;
+<span class="ln"></span>    <span class="k">return</span> IP / <span class="n">4u</span> &lt;= <span class="n">8u</span> ? IP / <span class="n">4u</span> : <span class="n">8u</span>;
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t IP, <span class="k">typename</span> V, <span class="k">typename</span> Load, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">staged_dif_butterfly</span>(Load&amp;&amp; load, Emit&amp;&amp; emit);
+<span class="ln"></span>
+<span class="ln"></span><span class="c">// A stateless loader over one contiguous scratch row, for the recursive stage-B split. A</span>
+<span class="ln"></span><span class="c">// local class cannot carry a member template, so it lives here.</span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t Stride, <span class="k">typename</span> V&gt;
+<span class="ln"></span><span class="k">struct</span> staged_row_loader {
+<span class="ln"></span>    <span class="k">const</span> T* ar;
+<span class="ln"></span>    <span class="k">const</span> T* ai;
+<span class="ln"></span>    <span class="k">template</span>&lt;<span class="k">typename</span> J&gt;
+<span class="ln"></span>    ADM_ALWAYS_INLINE <span class="k">void</span> <span class="k">operator</span>()(J, V&amp; lr, V&amp; li) <span class="k">const</span> {
+<span class="ln"></span>        lr = <span class="t">V</span>::<span class="f">load_aligned</span>(ar + <span class="t">J</span>::value * Stride * <span class="t">V</span>::size);
+<span class="ln"></span>        li = <span class="t">V</span>::<span class="f">load_aligned</span>(ai + <span class="t">J</span>::value * Stride * <span class="t">V</span>::size);
+<span class="ln"></span>    }
+<span class="ln"></span>};
+<span class="ln"></span>
+<span class="ln"></span><span class="c">// Stage B of the outer split: one radix-N2 butterfly over the scratch row.</span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t N2, <span class="t">std</span>::size_t Stride, <span class="k">typename</span> V, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">staged_dif_stage_b</span>(<span class="k">const</span> T* ar, <span class="k">const</span> T* ai, Emit&amp;&amp; emit) {
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t W = <span class="t">V</span>::size;
+<span class="ln"></span>    <span class="k">if</span> <span class="k">constexpr</span> (ADM_FIX2_L3 &amp;&amp; N2 &gt;= <span class="n">16u</span>) {
+<span class="ln"></span>        <span class="f">staged_dif_butterfly</span>&lt;T, N2, V&gt;(<span class="f">staged_row_loader</span>&lt;T, Stride, V&gt;{ar, ai},
+<span class="ln"></span>                                       <span class="t">std</span>::<span class="f">forward</span>&lt;Emit&gt;(emit));
+<span class="ln"></span>    } <span class="k">else</span> {
+<span class="ln"></span>        V cr[N2], ci[N2];
+<span class="ln"></span>        <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, N2&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> n) ADM_LAMBDA_ALWAYS_INLINE {
+<span class="ln"></span>            cr[n] = <span class="t">V</span>::<span class="f">load_aligned</span>(ar + n * Stride * W);
+<span class="ln"></span>            ci[n] = <span class="t">V</span>::<span class="f">load_aligned</span>(ai + n * Stride * W);
+<span class="ln"></span>        });
+<span class="ln"></span>        <span class="f">sub_dft</span>&lt;T, N2, V&gt;(cr, ci, <span class="t">std</span>::<span class="f">forward</span>&lt;Emit&gt;(emit));
+<span class="ln"></span>    }
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="k">typename</span> T, <span class="t">std</span>::size_t IP, <span class="k">typename</span> V, <span class="k">typename</span> Load, <span class="k">typename</span> Emit&gt;
+<span class="ln"></span>ADM_ALWAYS_INLINE <span class="k">void</span> <span class="f">staged_dif_butterfly</span>(Load&amp;&amp; load, Emit&amp;&amp; emit) {
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t N2 = <span class="f">staged_dif_n2</span>&lt;IP&gt;();
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t N1 = IP / N2;
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t W = <span class="t">V</span>::size;
+<span class="ln"></span>    <span class="k">static_assert</span>(N1 * N2 == IP &amp;&amp; N1 &gt;= <span class="n">2</span> &amp;&amp; N2 &gt;= <span class="n">2</span>, <span class="s">&quot;staged split must factor IP&quot;</span>);
+<span class="ln"></span>    <span class="k">alignas</span>(<span class="t">V</span>::<span class="t">arch_type</span>::<span class="f">alignment</span>()) T ar[IP * W];
+<span class="ln"></span>    <span class="k">alignas</span>(<span class="t">V</span>::<span class="t">arch_type</span>::<span class="f">alignment</span>()) T ai[IP * W];
+<span class="ln"></span>    <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, N2&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> n) ADM_LAMBDA_ALWAYS_INLINE {
+<span class="ln"></span>        V br[N1], bi[N1];
+<span class="ln"></span>        <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, N1&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> m) ADM_LAMBDA_ALWAYS_INLINE {
+<span class="ln"></span>            <span class="f">load</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, n + N2 * m&gt;{}, br[m], bi[m]);
+<span class="ln"></span>        });
+<span class="ln"></span>        <span class="f">sub_dft</span>&lt;T, N1, V&gt;(br, bi, [&amp;](<span class="k">const</span> <span class="k">auto</span> r, V yr, V yi) ADM_LAMBDA_ALWAYS_INLINE {
+<span class="ln"></span>            <span class="k">constexpr</span> <span class="t">std</span>::size_t e = (r * n) % IP;
+<span class="ln"></span>            <span class="k">const</span> <span class="k">auto</span> [fr, fi] = <span class="f">apply_stage_twiddle</span>&lt;T, IP, e, V&gt;(yr, yi);
+<span class="ln"></span>            fr.<span class="f">store_aligned</span>(ar + (r * N2 + n) * W);
+<span class="ln"></span>            fi.<span class="f">store_aligned</span>(ai + (r * N2 + n) * W);
+<span class="ln"></span>        });
+<span class="ln"></span>    });
+<span class="ln"></span>    <span class="t">poet</span>::<span class="f">static_for</span>&lt;<span class="n">0</span>, N1&gt;([&amp;](<span class="k">const</span> <span class="k">auto</span> r) ADM_LAMBDA_ALWAYS_INLINE {
+<span class="ln"></span>        <span class="k">constexpr</span> <span class="t">std</span>::size_t off = r * N2 * W;
+<span class="ln"></span>        <span class="f">staged_dif_stage_b</span>&lt;T, N2, <span class="n">1u</span>, V&gt;(
+<span class="ln"></span>            ar + off, ai + off, [&amp;](<span class="k">const</span> <span class="k">auto</span> k2, V yr, V yi) ADM_LAMBDA_ALWAYS_INLINE {
+<span class="ln"></span>                <span class="f">emit</span>(<span class="t">std</span>::<span class="f">integral_constant</span>&lt;<span class="t">std</span>::size_t, r + N1 * k2&gt;{}, yr, yi);
+<span class="ln"></span>            });
+<span class="ln"></span>    });
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="c">// Radices this large spill the monolithic butterfly&#x27;s 2*IP live registers, so passes route</span>
+<span class="ln"></span><span class="c">// them through the staged split above instead.</span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="t">std</span>::size_t IP&gt;
+<span class="ln"></span><span class="k">inline</span> <span class="k">constexpr</span> <span class="k">bool</span> dif_staged_radix =
+<span class="ln"></span>    <span class="t">detail</span>::<span class="f">has_single_bit</span>(IP) &amp;&amp; IP &gt;= <span class="n">16</span> &amp;&amp;
+<span class="ln"></span>    <span class="f">dif_butterfly_wants_reload</span>&lt;IP&gt; &amp;&amp; <span class="t">poet</span>::<span class="f">vector_register_count</span>() &gt;= <span class="n">32</span>;
+<span class="ln"></span>
+<span class="ln"></span><span class="k">template</span>&lt;<span class="t">std</span>::size_t IP&gt;
+<span class="ln"></span>ADM_CONSTEVAL <span class="t">std</span>::size_t <span class="f">dif_pass_unroll</span>() {
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t peak_live = <span class="n">2u</span> * IP + <span class="n">10u</span>;
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t budget = <span class="t">poet</span>::<span class="f">vector_register_count</span>();
+<span class="ln"></span>    <span class="k">constexpr</span> <span class="t">std</span>::size_t u = budget / peak_live;
+<span class="ln"></span>    <span class="k">return</span> u &lt; <span class="n">1u</span> ? <span class="n">1u</span> : u;
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span>}
+<span class="ln"></span>}
+<span class="ln"></span>
+<span class="ln"></span><span class="p">#include &quot;undef_macros.hpp&quot;</span></div><div class="term-out"><span class="p">$ git show</span><span class="note" style="margin-left:0">b9a2bdfe7d &middot; 2026-09-09 &middot; 358 lines, 21 poet:: call sites, no asm</span></div></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>42</b> / 44</p></section>
+<!-- SPEAKER NOTE: admiral is handed nthreads=0 and prices the wake cost itself; the libraries get OMP_NUM_THREADS. FFTW3 MT is missing on genoa by decision, not by accident: FFTW_MEASURE at 96 threads burns a core for hours, one size past two, where the same block takes 13 to 24 minutes on icelake and rome. MKL's 2D spike above 1e3 gridpoints on both AMD parts reproduces: it is unhappy past 16 threads at those sizes. These plots are admiral 683a697, 5 days newer than the butterfly.hpp on the previous slide. -->
+<section class="slide" aria-label="slide 43"><div class="slide-content"><p class="kicker reveal">Backup &middot; performance</p><h2 class="reveal">Multi-threaded, <em>against the field</em></h2><div class="body stack reveal" style="gap:14px"><div class="figstrip"><figure><img src="assets/fft/1d_mt_icelake.png" alt="icelake &middot; 64 threads"><figcaption>icelake &middot; 64 threads</figcaption></figure><figure><img src="assets/fft/1d_mt_rome.png" alt="rome &middot; 128 threads"><figcaption>rome &middot; 128 threads</figcaption></figure><figure><img src="assets/fft/1d_mt_genoa.png" alt="genoa &middot; 96 threads"><figcaption>genoa &middot; 96 threads</figcaption></figure><figure><img src="assets/fft/2d_mt_icelake.png" alt="icelake &middot; 64 threads"><figcaption>icelake &middot; 64 threads</figcaption></figure><figure><img src="assets/fft/2d_mt_rome.png" alt="rome &middot; 128 threads"><figcaption>rome &middot; 128 threads</figcaption></figure><figure><img src="assets/fft/2d_mt_genoa.png" alt="genoa &middot; 96 threads"><figcaption>genoa &middot; 96 threads</figcaption></figure><figure><img src="assets/fft/3d_mt_icelake.png" alt="icelake &middot; 64 threads"><figcaption>icelake &middot; 64 threads</figcaption></figure><figure><img src="assets/fft/3d_mt_rome.png" alt="rome &middot; 128 threads"><figcaption>rome &middot; 128 threads</figcaption></figure><figure><img src="assets/fft/3d_mt_genoa.png" alt="genoa &middot; 96 threads"><figcaption>genoa &middot; 96 threads</figcaption></figure></div><p class="score-legend" style="justify-content:flex-start"><span>scroll sideways &middot; 1D, 2D, 3D &times; three machines</span><span>MKL 2026.0.0 &middot; FFTW3 (MEASURE) 3.3.11 &middot; DUCC 0.41.1-72-g9919ab6 &middot; Sleef 3.9.0-41-g7623d6c &middot; admiral 683a697</span><span>gcc 14.3.0, <code>-O3 -march=icelake-server|znver2|znver4</code> &middot; whole node, both sockets, SMT off &middot; <code>fft_bench</code> c9ae666, 2026-09-14</span></p></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>43</b> / 44</p></section>
+<section class="slide section-slide" aria-label="slide 44"><div class="slide-content"><div class="statement"><p class="kicker reveal">Thank you</p><p class="big reveal">Questions?</p><div class="body links reveal" style="margin-top:14px"><div class="qr"><img src="assets/qr-page.png" alt="QR code to the links page"><p>diamondinoia.com/cppcon26</p></div><ul class="repos"><li><span class="nm">poet</span>compile-time control, runtime dispatch, C++17</li><li><span class="nm">xsimd</span>portable SIMD batches</li><li><span class="nm">FINUFFT</span>issue #459, where this started</li><li><span class="nm">admiral</span>the FFT library of the backup slides</li><li><span class="nm">simdref</span>searchable SIMD intrinsic reference</li><li><span class="nm">slides</span>Markdown source and <code>code/code.cpp</code></li></ul></div></div></div><div class="chrome-rule"></div><img class="chrome-logo" src="assets/fi-logo.png" alt="Flatiron Institute"><p class="chrome-num"><b>44</b> / 44</p></section>
+</main>
+</div>
+
+<!-- presenter chrome, outside the 1920x1080 stage -->
+<div class="deck-progress" id="deckProgress"></div>
+<div class="edit-hotzone"></div>
+<button class="edit-toggle" id="editToggle" title="Edit mode (E)" aria-label="Toggle edit mode">&#9998;</button>
+
+<script>
+
+/* ===========================================
+   SLIDE CONTROLLER
+   Fixed 1920x1080 stage, scaled as a whole.
+   =========================================== */
+class SlidePresentation {
+    constructor() {
+        this.slides = Array.from(document.querySelectorAll('.slide'));
+        this.stage = document.getElementById('deckStage');
+        this.progress = document.getElementById('deckProgress');
+        this.current = 0;
+        this.setupStageScale();
+        this.setupKeyboardNav();
+        this.setupTouchNav();
+        this.setupWheelNav();
+        this.showSlide(this.slideFromHash());
+        window.addEventListener('hashchange', () => this.showSlide(this.slideFromHash()));
+    }
+
+    /* scale the whole stage to fit the window; letterbox, never reflow */
+    setupStageScale() {
+        const scale = () => {
+            const f = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+            const x = (window.innerWidth - 1920 * f) / 2;
+            const y = (window.innerHeight - 1080 * f) / 2;
+            this.stage.style.transform = `translate(${x}px, ${y}px) scale(${f})`;
+        };
+        scale();
+        window.addEventListener('resize', scale);
+    }
+
+    slideFromHash() {
+        const n = parseInt(location.hash.replace('#', ''), 10);
+        return Number.isFinite(n) ? n - 1 : 0;
+    }
+
+    /* the scrollable box of the current slide, if it has one */
+    box() { return this.slides[this.current].querySelector('.scroller, .figstrip'); }
+
+    /* pixels the box can still travel in direction d: sideways for a strip */
+    room(box, d) {
+        const x = box.classList.contains('figstrip');
+        const pos = x ? box.scrollLeft : box.scrollTop;
+        const span = x ? box.scrollWidth - box.clientWidth : box.scrollHeight - box.clientHeight;
+        return d > 0 ? span - pos : pos;
+    }
+
+    /* one figure for a strip, most of a screenful for a listing */
+    stepBox(box, d) {
+        const fig = box.querySelectorAll('figure');
+        if (box.classList.contains('figstrip')) {
+            const step = fig.length > 1 ? fig[1].offsetLeft - fig[0].offsetLeft : box.clientWidth;
+            box.scrollBy({ left: d * step, behavior: 'smooth' });
+        } else {
+            box.scrollBy({ top: d * 0.8 * box.clientHeight, behavior: 'smooth' });
+        }
+    }
+
+    setupKeyboardNav() {
+        document.addEventListener('keydown', (e) => {
+            if (e.target.getAttribute('contenteditable')) return;
+            // Down and Page walk a scrollable box first, so a clicker can read it;
+            // Right, Left and Space always turn the slide, whatever has focus
+            const step = (d) => {
+                const box = this.box();
+                if (box && this.room(box, d) > 1) this.stepBox(box, d);
+                else (d > 0 ? this.next() : this.prev());
+            };
+            switch (e.key) {
+                case 'ArrowDown': case 'PageDown': e.preventDefault(); step(1); break;
+                case 'ArrowUp': case 'PageUp': e.preventDefault(); step(-1); break;
+                case 'ArrowRight': case ' ': e.preventDefault(); this.next(); break;
+                case 'ArrowLeft': e.preventDefault(); this.prev(); break;
+                case 'Home': e.preventDefault(); this.showSlide(0); break;
+                case 'End': e.preventDefault(); this.showSlide(this.slides.length - 1); break;
+            }
+        });
+    }
+
+    setupTouchNav() {
+        let x0 = null, y0 = null;
+        document.addEventListener('touchstart', (e) => {
+            x0 = e.changedTouches[0].clientX; y0 = e.changedTouches[0].clientY;
+        }, { passive: true });
+        document.addEventListener('touchend', (e) => {
+            if (x0 === null) return;
+            const dx = e.changedTouches[0].clientX - x0;
+            const dy = e.changedTouches[0].clientY - y0;
+            if (Math.abs(dx) > 46 && Math.abs(dx) > Math.abs(dy)) {
+                // a sideways swipe inside the figure strip is the strip's own scroll
+                const strip = e.target.closest && e.target.closest('.figstrip');
+                const d = dx < 0 ? 1 : -1;
+                if (!(strip && this.room(strip, d) > 1)) (d > 0 ? this.next() : this.prev());
+            }
+            x0 = null;
+        }, { passive: true });
+    }
+
+    setupWheelNav() {
+        let lock = 0;
+        window.addEventListener('wheel', (e) => {
+            const box = e.target.closest && e.target.closest('.scroller, .figstrip');
+            const d = Math.sign(e.deltaY);
+            const now = Date.now();
+            if (now - lock < 620 || Math.abs(e.deltaY) < 22) return;
+            // the wheel belongs to a scrollable box until the box runs out of room
+            // in that direction; then it turns the slide, so nobody gets stuck
+            if (box && this.room(box, d) > 1) {
+                lock = now;
+                // a listing scrolls natively; a strip is sideways, so step it here
+                if (box.classList.contains('figstrip')) this.stepBox(box, d);
+                return;
+            }
+            lock = now;
+            (d > 0 ? this.next() : this.prev());
+        }, { passive: true });
+    }
+
+    /* a slide with a .step column takes one extra keypress in each direction */
+    next() {
+        const s = this.slides[this.current];
+        if (s.querySelector('.step') && !s.classList.contains('stepped')) s.classList.add('stepped');
+        else this.showSlide(this.current + 1);
+    }
+    prev() {
+        const s = this.slides[this.current];
+        if (s.classList.contains('stepped')) s.classList.remove('stepped');
+        else this.showSlide(this.current - 1, true);
+    }
+
+    showSlide(i, stepped = false) {
+        this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+        this.slides.forEach((s, k) => {
+            const on = k === this.current;
+            s.classList.toggle('active', on);
+            s.classList.toggle('visible', on);
+            s.classList.toggle('stepped', on && stepped);
+        });
+        this.progress.style.width =
+            (100 * (this.current + 1) / this.slides.length).toFixed(2) + 'vw';
+        history.replaceState(null, '', '#' + (this.current + 1));
+    }
+}
+
+/* ===========================================
+   INLINE TEXT EDITING
+   Hover the top-left corner, or press E.
+   Ctrl+S downloads the edited deck.
+   =========================================== */
+// the key carries the build hash, so a regenerated deck ignores older edits
+const STORE = 'cppcon26-slides-dbd4142651e5';
+
+class InlineEditor {
+    constructor(deck) {
+        this.deck = deck;
+        this.isActive = false;
+        this.selector = 'h2, h3, p, li, td, .term-name, .term-flags, .nm, .when, .what, .rk, .no';
+        this.restore();
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'e' || e.key === 'E') && !e.target.getAttribute('contenteditable')) {
+                this.toggle();
+            }
+            if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.download(); }
+        });
+    }
+
+    toggle() {
+        this.isActive = !this.isActive;
+        document.body.classList.toggle('editing', this.isActive);
+        const btn = document.getElementById('editToggle');
+        btn.classList.toggle('active', this.isActive);
+        document.querySelectorAll(this.selector).forEach((el) => {
+            if (el.closest('.term-body')) return;      /* never edit highlighted code */
+            if (this.isActive) {
+                el.setAttribute('contenteditable', 'true');
+                el.addEventListener('blur', () => this.save(), { once: true });
+            } else {
+                el.removeAttribute('contenteditable');
+            }
+        });
+        if (!this.isActive) this.save();
+    }
+
+    save() {
+        try {
+            const edits = {};
+            document.querySelectorAll('.slide').forEach((s, i) => { edits[i] = s.innerHTML; });
+            localStorage.setItem(STORE, JSON.stringify(edits));
+        } catch (err) { /* private mode: editing still works, it just does not persist */ }
+    }
+
+    restore() {
+        try {
+            const edits = JSON.parse(localStorage.getItem(STORE) || '{}');
+            document.querySelectorAll('.slide').forEach((s, i) => {
+                if (edits[i]) s.innerHTML = edits[i];
+            });
+        } catch (err) { /* ignore malformed storage */ }
+    }
+
+    download() {
+        const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+        a.download = 'slides.html';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+}
+
+const deck = new SlidePresentation();
+const editor = new InlineEditor(deck);
+
+/* edit affordance: hover hotzone with a grace period, click, or E */
+(() => {
+    const hotzone = document.querySelector('.edit-hotzone');
+    const btn = document.getElementById('editToggle');
+    let hide = null;
+    const show = () => { clearTimeout(hide); btn.classList.add('show'); };
+    const later = () => {
+        hide = setTimeout(() => { if (!editor.isActive) btn.classList.remove('show'); }, 400);
+    };
+    hotzone.addEventListener('mouseenter', show);
+    hotzone.addEventListener('mouseleave', later);
+    btn.addEventListener('mouseenter', show);
+    btn.addEventListener('mouseleave', later);
+    btn.addEventListener('click', () => editor.toggle());
+    hotzone.addEventListener('click', () => editor.toggle());
+})();
+
+</script>
+</body>
+</html>

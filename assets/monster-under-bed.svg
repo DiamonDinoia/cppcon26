@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img"
+     aria-label="A monster with glowing eyes hiding under a bed">
+  <defs>
+    <linearGradient id="mattress" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#42568A"/>
+      <stop offset="1" stop-color="#2A3760"/>
+    </linearGradient>
+    <linearGradient id="blanket" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3A4C7C"/>
+      <stop offset="1" stop-color="#212B4C"/>
+    </linearGradient>
+    <linearGradient id="void" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#060911"/>
+      <stop offset="1" stop-color="#0C1120"/>
+    </linearGradient>
+    <radialGradient id="floorglow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFBB33" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFBB33" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="eyeglow" x="-150%" y="-150%" width="400%" height="400%">
+      <feGaussianBlur stdDeviation="11"/>
+    </filter>
+  </defs>
+
+  <!-- floorboard and the light the eyes throw on it -->
+  <rect x="40" y="500" width="726" height="4" rx="2" fill="#34446F" opacity="0.5"/>
+  <ellipse cx="290" cy="502" rx="230" ry="30" fill="url(#floorglow)"/>
+
+  <!-- the dark under the bed, and the legs standing in it -->
+  <rect x="150" y="380" width="510" height="120" fill="url(#void)"/>
+  <rect x="156" y="380" width="22" height="120" rx="5" fill="#141A2C"/>
+  <rect x="632" y="380" width="22" height="120" rx="5" fill="#141A2C"/>
+
+  <!-- monster: glow, iris, slit pupil, grin -->
+  <g filter="url(#eyeglow)">
+    <ellipse cx="256" cy="424" rx="32" ry="24" fill="#FFBB33" opacity="0.9"/>
+    <ellipse cx="348" cy="430" rx="32" ry="24" fill="#FFBB33" opacity="0.9"/>
+  </g>
+  <ellipse cx="256" cy="424" rx="23" ry="17" fill="#FFD98A"/>
+  <ellipse cx="348" cy="430" rx="23" ry="17" fill="#FFD98A"/>
+  <ellipse cx="260" cy="424" rx="6" ry="14" fill="#101627"/>
+  <ellipse cx="352" cy="430" rx="6" ry="14" fill="#101627"/>
+  <path d="M214 462 q92 40 184 0 l-12 18 -18 -12 -19 15 -19 -13 -20 16 -20 -16 -19 13 -19 -15 -18 12 z"
+        fill="#EDF1F9" opacity="0.94"/>
+
+  <!-- bed, drawn over the dark so the frame reads as an edge -->
+  <rect x="118" y="190" width="48" height="190" rx="15" fill="#2A3760"/>
+  <rect x="118" y="190" width="48" height="190" rx="15" fill="none"
+        stroke="#42568A" stroke-width="2"/>
+  <rect x="182" y="278" width="136" height="42" rx="21" fill="#4C609A" opacity="0.9"/>
+  <rect x="150" y="310" width="514" height="54" rx="12" fill="url(#mattress)"/>
+  <rect x="158" y="364" width="498" height="18" rx="6" fill="#1B2340"/>
+
+  <!-- blanket over the near edge, hem hanging just past the frame -->
+  <path d="M430 310 h234 a12 12 0 0 1 12 12 v90
+           q-22 15 -44 0 q-22 -15 -44 0 q-22 15 -44 0 q-22 -15 -44 0 q-22 15 -38 1 z"
+        fill="url(#blanket)"/>
+</svg>

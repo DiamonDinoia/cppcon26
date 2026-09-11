@@ -1,0 +1,15 @@
+# tooling and evidence, never the deck
+.venv/
+__pycache__/
+shots/
+
+# benchmark build products: deps are cloned by code/Makefile
+code/deps/
+code/code
+code/standard
+
+*.md
+!README.md
+
+# the generator and its guards stay local, the deck is the product
+gen/
